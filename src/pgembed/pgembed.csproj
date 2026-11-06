@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- one build that runs on .NET 8 and every later runtime -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>pgembed</ToolCommandName>
+    <PackageId>pgembed</PackageId>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <Description>Command-line tool for embedded PostgreSQL: list and install Postgres versions, see their extensions, manage the download cache and diagnose problems. Built on MysticMind.PostgresEmbed.</Description>
+    <Authors>Babu Annamalai</Authors>
+    <Copyright>Copyright (C) Babu Annamalai</Copyright>
+    <PackageTags>postgres;postgresql;pg;embedded;cli;dotnet-tool;testing</PackageTags>
+    <PackageProjectUrl>https://github.com/mysticmind/pgembed-cli</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mysticmind/pgembed-cli</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <InternalsVisibleTo Include="pgembed.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+    <PackageReference Include="Spectre.Console.Cli" Version="0.57.2" />
+  </ItemGroup>
+
+  <!-- The published library by default. To build against a local checkout before a library
+       release, pass -p:PgEmbedLibraryProject=<path to MysticMind.PostgresEmbed.csproj>. -->
+  <ItemGroup Condition="'$(PgEmbedLibraryProject)' == ''">
+    <PackageReference Include="MysticMind.PostgresEmbed" Version="[5.1.0, 6.0.0)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(PgEmbedLibraryProject)' != ''">
+    <ProjectReference Include="$(PgEmbedLibraryProject)" />
+  </ItemGroup>
+</Project>
