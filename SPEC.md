@@ -21,11 +21,11 @@ Status: proposal. Decisions marked **(decided)** were agreed on 2026-11-06.
 | Repo | `mysticmind/pgembed-cli` |
 | NuGet package and command | `pgembed` (a .NET tool) |
 | Install | `dotnet tool install -g pgembed`, or `dnx pgembed <command>` on .NET 10+ |
-| Runtime | built for net8.0 with roll-forward, so it runs on .NET 8 and later |
+| Runtime | built for net8.0 (runs on .NET 8 and 9) and net10.0 (.NET 10 and later); they differ only in the line editor's version |
 | Versioning | independent of the library, starting at 0.1.0 |
 | Library reference | `MysticMind.PostgresEmbed` `[5.2.0, 6.0.0)` (5.2 adds what pgembed needs, see below) |
 | Publishing | NuGet trusted publishing, policy for repository `pgembed-cli`, workflow `publish.yaml` |
-| Dependencies | Spectre.Console and Spectre.Console.Cli (commands and output), Npgsql (SQL), [pgsqlparser](https://github.com/mysticmind/pgsqlparser-dotnet) (formatting, splitting, syntax checks, classification), PrettyPrompt (shell, 0.2), ModelContextProtocol (MCP, 0.2) |
+| Dependencies | Spectre.Console and Spectre.Console.Cli (commands and output), Npgsql (SQL), [pgsqlparser](https://github.com/mysticmind/pgsqlparser-dotnet) (formatting, splitting, syntax checks, classification), PrettyPrompt (the interactive prompt's line editor: 4.1 on net8.0, 6.x on net10.0), ModelContextProtocol (MCP, 0.2) |
 
 ## Architecture
 
@@ -159,11 +159,11 @@ Names accept wildcards where several instances make sense: `pgembed stop ci-*`.
 
 - **split scripts correctly** for `sql -f`: dollar-quoted function bodies and semicolons in strings are handled, so each statement gets its own result and an error names the failing statement;
 - **check syntax offline** with `sql --check`, showing the error position, without a running server;
-- **format SQL** in `format` and in the shell;
-- drive the shell's **highlighting** (tokenizer) and decide when a **multi-line statement is complete** (scanner);
-- **classify statements**: the shell asks before `DROP`, `TRUNCATE`, or `DELETE`/`UPDATE` without `WHERE`, and the MCP read-only mode refuses writes before they reach the server (on top of the read-only transaction).
+- **format SQL** in `format` (later);
+- drive the prompt's **highlighting** and live **syntax-error underline** (tokenizer and parser), and decide when a **multi-line statement is complete**;
+- **classify statements**: `sql` and the prompt confirm schema changes and changes to existing rows before they run (calling out `UPDATE`/`DELETE` without `WHERE`), and the MCP read-only mode will refuse writes before they reach the server (on top of the read-only transaction).
 
-The server stays the authority: when the parser rejects SQL the server might accept (for example syntax newer than the parser's PostgreSQL 18 grammar), pgembed still sends it and only skips splitting and checks.
+The server stays the authority: when the parser rejects SQL the server might accept (for example syntax newer than the parser's PostgreSQL 18 grammar), pgembed still sends it, as one batch; since it cannot classify it, it asks first (or needs `--yes`).
 
 ## MCP server (decided: in 0.2)
 
@@ -208,12 +208,13 @@ Later, when needed: download progress (`IProgress<>`) and resumable downloads.
 | Release | Contents |
 | --- | --- |
 | Library 5.1.0 | released 2026-11-06: version specs, `InstallAsync`, extension discovery, checksum verification |
-| Library 5.2.0 | the six items above |
-| pgembed 0.1 | `versions`, `install`, `extensions`, instances (`start`/`stop`/`kill`/`restart`/`status`/`connstr`/`logs`/`rm`; background by default, `--foreground`, several versions), one-shot `sql` (parser-based splitting, `--check`), `doctor`, simple `cache list`/`clean` |
+| Library 5.2.0 | released 2026-11-06: the six items above |
+| Library 5.2.1 | released 2026-11-06: a killed server's shared memory is removed, so kills no longer exhaust macOS's 32 System V segments |
+| pgembed 0.1 | `versions`, `install`, `extensions`; instances (`start`/`stop`/`kill`/`restart`/`status`/`connstr`/`logs`/`rm`; background by default, `--foreground`, several versions); `sql` against instances or any connection string, with parser-based splitting, `--check`, `--schema`, confirmation of changes and the `aligned` format; the interactive prompt; `schema` and the `\d` commands; `connstr` in every format; `doctor`, `cache list`/`clean` |
 | pgembed 0.2 | MCP server |
-| When there is demand | interactive `shell`, `schema`, `format`, `ext add` with curated extensions (the planned `mysticmind-postgres-binaries`), a remote extension catalog, download progress and resumable downloads |
+| When there is demand | `format`, `ext add` with curated extensions (the planned `mysticmind-postgres-binaries`), a remote extension catalog, download progress and resumable downloads |
 
-Scope is kept lean on purpose: the differentiators (several Postgres versions without Docker, including on machines and CI runners that cannot run Docker, and a throwaway real Postgres for AI assistants) come first, and the rest waits for real demand (issues, downloads, MCP usage).
+Scope is kept lean on purpose. 0.1 grew past the first plan (the prompt, `schema`, connection strings) because they were wanted while building it; the differentiators (several Postgres versions without Docker, including on machines and CI runners that cannot run Docker, and a throwaway real Postgres for AI assistants) come first, and the rest waits for real demand (issues, downloads, MCP usage).
 
 ## Out of scope for now
 
