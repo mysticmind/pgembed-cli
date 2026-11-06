@@ -1,4 +1,6 @@
-# pgembed
+<img src="https://raw.githubusercontent.com/mysticmind/pgembed-cli/main/assets/icon.png" alt="pgembed icon: an elephant standing on a terminal" width="96">
+
+# pgembed [![NuGet](https://badgen.net/nuget/v/pgembed)](https://www.nuget.org/packages/pgembed/)
 
 Run PostgreSQL on your machine without installing it. `pgembed` downloads the official Postgres
 binaries for your platform (Windows, macOS, Linux and Alpine, x64 and arm64), keeps named
