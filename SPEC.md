@@ -25,7 +25,7 @@ Status: proposal. Decisions marked **(decided)** were agreed on 2026-11-06.
 | Versioning | independent of the library, starting at 0.1.0 |
 | Library reference | `MysticMind.PostgresEmbed` `[5.2.0, 6.0.0)` (5.2 adds what pgembed needs, see below) |
 | Publishing | NuGet trusted publishing, policy for repository `pgembed-cli`, workflow `publish.yaml` |
-| Dependencies | Spectre.Console and Spectre.Console.Cli (commands and output), Npgsql (SQL), PrettyPrompt (shell, 0.2), ModelContextProtocol (MCP, 0.2) |
+| Dependencies | Spectre.Console and Spectre.Console.Cli (commands and output), Npgsql (SQL), [pgsqlparser](https://github.com/mysticmind/pgsqlparser-dotnet) (formatting, splitting, syntax checks, classification), PrettyPrompt (shell, 0.2), ModelContextProtocol (MCP, 0.2) |
 
 ## Architecture
 
@@ -127,7 +127,21 @@ Names accept wildcards where several instances make sense: `pgembed stop ci-*`.
 | `pgembed schema <name> [<table>] [--schema <schema>] [--db <db>]` | tables with row estimates and sizes; for one table: columns, types, nullability, defaults, primary key, indexes, foreign keys, checks |
 | `pgembed shell <name> [--db <db>]` (0.2) | interactive: history per instance, multi-line statements, SQL highlighting, completion of keywords and your tables and columns, and `psql`-style commands: `\dt`, `\d <table>`, `\dn`, `\di`, `\dx`, `\l`, `\c <db>`, `\x`, `\timing`, `\i <file>`, `\q` |
 
+| `pgembed format ["<sql>"] [-f <file>]... [--check]` | format SQL from arguments, files or stdin; `--check` exits 1 when a file is not formatted (a CI lint); needs no server |
+
 The table view caps rows (default 500) and says when it truncates; `json` and `csv` return everything.
+
+### Using the PostgreSQL parser (pgsqlparser)
+
+[pgsqlparser](https://github.com/mysticmind/pgsqlparser-dotnet) wraps libpg_query, the real PostgreSQL parser, with native libraries for every platform pgembed supports. pgembed uses it to:
+
+- **split scripts correctly** for `sql -f`: dollar-quoted function bodies and semicolons in strings are handled, so each statement gets its own result and an error names the failing statement;
+- **check syntax offline** with `sql --check`, showing the error position, without a running server;
+- **format SQL** in `format` and in the shell;
+- drive the shell's **highlighting** (tokenizer) and decide when a **multi-line statement is complete** (scanner);
+- **classify statements**: the shell asks before `DROP`, `TRUNCATE`, or `DELETE`/`UPDATE` without `WHERE`, and the MCP read-only mode refuses writes before they reach the server (on top of the read-only transaction).
+
+The server stays the authority: when the parser rejects SQL the server might accept (for example syntax newer than the parser's PostgreSQL 18 grammar), pgembed still sends it and only skips splitting and checks.
 
 ## MCP server (decided: in 0.2)
 
@@ -146,7 +160,9 @@ The table view caps rows (default 500) and says when it truncates; `json` and `c
 | `remove_instance` | delete an instance and its data (asks for confirmation) |
 | `get_connection_string`, `get_logs` | for a named instance |
 | `list_extensions` | for a version |
-| `run_sql` | run SQL, return columns and rows, with a row limit; optional read-only mode (runs in a read-only transaction) |
+| `run_sql` | run SQL, return columns and rows, with a row limit; optional read-only mode (writes are refused by classification, and the SQL runs in a read-only transaction) |
+| `format_sql` | format SQL (no server needed) |
+| `analyze_query` | the tables and columns a query uses and the locks it takes (no server needed) |
 | `describe_schema`, `describe_table` | tables; columns, keys, indexes, constraints |
 | `explain_query` | the query plan |
 
@@ -168,7 +184,7 @@ pgembed needs these library additions. Additive, no breaking changes:
 | --- | --- |
 | Library 5.1.0 | merged (#40), to publish: version specs, `InstallAsync`, extension discovery, checksum verification |
 | Library 5.2.0 | the five items above |
-| pgembed 0.1 | discovery and cache commands, `doctor`, instances (background by default, `--foreground`, several versions), `sql`, `schema` |
+| pgembed 0.1 | discovery and cache commands, `doctor`, instances (background by default, `--foreground`, several versions), `sql` (with parser-based splitting and `--check`), `schema`, `format` |
 | pgembed 0.2 | `shell`, MCP server |
 | Later | `ext add` with curated extensions (from the planned `mysticmind-postgres-binaries`), a remote extension catalog, `schema --ddl` |
 
