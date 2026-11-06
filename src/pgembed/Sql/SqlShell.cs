@@ -129,70 +129,16 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
         if (changes.Count > 0) await ReloadCatalogAsync(ct);
     }
 
-    private const string Relations = """
-        SELECT n.nspname AS schema, c.relname AS name,
-               CASE c.relkind WHEN 'r' THEN 'table' WHEN 'p' THEN 'partitioned table' WHEN 'v' THEN 'view'
-                              WHEN 'm' THEN 'materialized view' WHEN 'S' THEN 'sequence' WHEN 'f' THEN 'foreign table' END AS type,
-               pg_size_pretty(pg_total_relation_size(c.oid)) AS size
-        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE c.relkind::text = ANY($1) AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%'
-          AND c.relname ILIKE $2
-        ORDER BY 1, 2
-        """;
-
     private async Task MetaAsync(string text, CancellationToken ct)
     {
-        var parts = text.Split((char[])[' ', '\t'], 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var command = parts[0];
-        var argument = parts.Length > 1 ? parts[1].TrimEnd(';') : null;
+        var (command, argument) = MetaCommands.Split(text);
         var runner = new SqlRunner(cli, output);
-        var pattern = argument is null ? "%" : argument.Replace('*', '%').Replace('?', '_');
+        if (await MetaCommands.TryRunAsync(await ConnectionAsync(ct), command, argument, runner, ct)) return;
 
         switch (command)
         {
             case "\\?":
                 Help();
-                break;
-
-            case "\\l":
-                await runner.QueryAsync(await ConnectionAsync(ct), """
-                    SELECT datname AS name, pg_get_userbyid(datdba) AS owner, pg_encoding_to_char(encoding) AS encoding,
-                           pg_size_pretty(pg_database_size(datname)) AS size
-                    FROM pg_database WHERE NOT datistemplate ORDER BY 1
-                    """, [], null, ct);
-                break;
-
-            case "\\dn":
-                await runner.QueryAsync(await ConnectionAsync(ct), """
-                    SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner
-                    FROM pg_namespace WHERE nspname <> 'information_schema' AND nspname NOT LIKE 'pg\_%' AND nspname ILIKE $1 ORDER BY 1
-                    """, [pattern], null, ct);
-                break;
-
-            case "\\dt":
-                await runner.QueryAsync(await ConnectionAsync(ct), Relations, [new[] { "r", "p" }, pattern], null, ct);
-                break;
-
-            case "\\dv":
-                await runner.QueryAsync(await ConnectionAsync(ct), Relations, [new[] { "v", "m" }, pattern], null, ct);
-                break;
-
-            case "\\df":
-                await runner.QueryAsync(await ConnectionAsync(ct), """
-                    SELECT n.nspname AS schema, p.proname AS name, pg_get_function_result(p.oid) AS result,
-                           pg_get_function_arguments(p.oid) AS arguments
-                    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                    WHERE n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' AND p.proname ILIKE $1
-                    ORDER BY 1, 2
-                    """, [pattern], null, ct);
-                break;
-
-            case "\\d" when argument is null:
-                await runner.QueryAsync(await ConnectionAsync(ct), Relations, [new[] { "r", "p", "v", "m", "S", "f" }, "%"], null, ct);
-                break;
-
-            case "\\d":
-                await DescribeAsync(runner, argument, ct);
                 break;
 
             case "\\c" when argument is not null:
@@ -239,31 +185,6 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
                 cli.Console.MarkupLineInterpolated($"[red]Unknown or incomplete command[/] {command}. [dim]\\? lists the commands.[/]");
                 break;
         }
-    }
-
-    private async Task DescribeAsync(SqlRunner runner, string name, CancellationToken ct)
-    {
-        var connection = await ConnectionAsync(ct);
-        var ok = await runner.QueryAsync(connection, """
-            SELECT a.attname AS column, format_type(a.atttypid, a.atttypmod) AS type,
-                   CASE WHEN a.attnotnull THEN 'not null' ELSE '' END AS nullable,
-                   coalesce(pg_get_expr(d.adbin, d.adrelid), '') AS default
-            FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-            WHERE a.attrelid = $1::regclass AND a.attnum > 0 AND NOT a.attisdropped
-            ORDER BY a.attnum
-            """, [name], name, ct);
-        if (!ok) return;
-
-        await runner.QueryAsync(connection, """
-            SELECT c.relname AS index, pg_get_indexdef(i.indexrelid) AS definition
-            FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-            WHERE i.indrelid = $1::regclass ORDER BY 1
-            """, [name], "Indexes", ct);
-
-        await runner.QueryAsync(connection, """
-            SELECT conname AS constraint, pg_get_constraintdef(oid) AS definition
-            FROM pg_constraint WHERE conrelid = $1::regclass AND contype IN ('p', 'u', 'f', 'c', 'x') ORDER BY 1
-            """, [name], "Constraints", ct);
     }
 
     private void Help()

@@ -164,6 +164,70 @@ public class InstanceLifecycleTests : IAsyncLifetime
         Assert.Equal("db\ntemplate1", withDb.Out.Trim().ReplaceLineEndings("\n"));
     }
 
+    [Fact]
+    public async Task Schema_and_backslash_d_describe_tables_the_same_way()
+    {
+        var start = await TestCli.RunAsync("start", _name, "--version", Version, "--port", "0");
+        Assert.True(start.ExitCode == 0, start.All);
+        var setup = await TestCli.RunAsync("sql", _name, "--yes", """
+            CREATE SCHEMA sales;
+            CREATE TABLE sales.customers (id int PRIMARY KEY, name text NOT NULL);
+            CREATE TABLE sales.orders (
+                id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                customer_id int NOT NULL REFERENCES sales.customers (id),
+                total numeric(10, 2) NOT NULL DEFAULT 0 CHECK (total >= 0),
+                total_with_tax numeric GENERATED ALWAYS AS (total * 1.2) STORED,
+                note text);
+            CREATE INDEX orders_customer ON sales.orders (customer_id);
+            COMMENT ON TABLE sales.orders IS 'One row per order';
+            """);
+        Assert.True(setup.ExitCode == 0, setup.All);
+
+        // pgembed schema: one structured document
+        var described = await TestCli.RunAsync("schema", _name, "orders", "--schema", "sales", "--json");
+        Assert.True(described.ExitCode == 0, described.All);
+        using var json = JsonDocument.Parse(described.Out);
+        var table = json.RootElement;
+        Assert.Equal("sales", table.GetProperty("schema").GetString());
+        Assert.Equal("One row per order", table.GetProperty("comment").GetString());
+        var columns = table.GetProperty("columns").EnumerateArray().ToDictionary(c => c.GetProperty("name").GetString()!);
+        Assert.True(columns["id"].GetProperty("primaryKey").GetBoolean());
+        Assert.Equal("always", columns["id"].GetProperty("identity").GetString());
+        Assert.False(columns["customer_id"].GetProperty("nullable").GetBoolean());
+        Assert.Equal("0", columns["total"].GetProperty("default").GetString());
+        Assert.Contains("1.2", columns["total_with_tax"].GetProperty("generated").GetString());
+        Assert.Contains(table.GetProperty("indexes").EnumerateArray(), i => i.GetProperty("name").GetString() == "orders_customer");
+        var foreignKey = Assert.Single(table.GetProperty("constraints").EnumerateArray(), c => c.GetProperty("kind").GetString() == "foreign key");
+        Assert.Equal("customers", foreignKey.GetProperty("references").GetString());
+        Assert.Contains(table.GetProperty("constraints").EnumerateArray(), c => c.GetProperty("kind").GetString() == "check");
+
+        // a pattern describes every match; no table lists them
+        var both = await TestCli.RunAsync("schema", _name, "sales.*", "--json");
+        Assert.True(both.ExitCode == 0, both.All);
+        using (var many = JsonDocument.Parse(both.Out)) Assert.Equal(2, many.RootElement.GetArrayLength());
+        var listed = await TestCli.RunAsync("schema", _name, "--schema", "sales", "--json");
+        using (var list = JsonDocument.Parse(listed.Out)) Assert.Equal(2, list.RootElement.GetArrayLength());
+
+        // \d as one-shot SQL shows the same description, here as psql-style text
+        var text = await TestCli.RunRedirectedAsync("sql", _name, "\\d sales.orders");
+        Assert.True(text.ExitCode == 0, text.All);
+        Assert.Contains("sales.orders (table", text.Out);
+        Assert.Contains("identity (always)", text.Out);
+        Assert.Contains("orders_customer", text.Out);
+        Assert.Contains("FOREIGN KEY (customer_id) REFERENCES", text.Out);
+
+        var tables = await TestCli.RunRedirectedAsync("sql", _name, "\\dt sales.*");
+        Assert.Equal(0, tables.ExitCode);
+
+        var sessionOnly = await TestCli.RunAsync("sql", _name, "\\c postgres");
+        Assert.Equal(1, sessionOnly.ExitCode);
+        Assert.Contains("interactive prompt", sessionOnly.Console);
+
+        var missing = await TestCli.RunAsync("schema", _name, "nope");
+        Assert.Equal(1, missing.ExitCode);
+        Assert.Contains("no table or view named 'nope'", missing.Console);
+    }
+
     /// <summary>Feeds the shell fixed lines, as if typed.</summary>
     private sealed class ScriptReader(params string[] lines) : ILineReader
     {

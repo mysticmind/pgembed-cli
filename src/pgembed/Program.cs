@@ -73,6 +73,9 @@ public static class Program
         config.AddCommand<SqlCommand>("sql").WithDescription("Run SQL against an instance and show the results")
             .WithExample("sql", "app", "SELECT version()").WithExample("sql", "app", "-f", "seed.sql");
 
+        config.AddCommand<SchemaCommand>("schema").WithDescription("List tables, or describe one: columns, keys, indexes, constraints")
+            .WithExample("schema", "app").WithExample("schema", "app", "books").WithExample("schema", "app", "orders", "--schema", "sales", "--json");
+
         config.AddCommand<DoctorCommand>("doctor").WithDescription("Check that Postgres can run here");
         config.AddBranch<GlobalSettings>("cache", cache =>
         {

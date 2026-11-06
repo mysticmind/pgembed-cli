@@ -60,6 +60,22 @@ internal sealed class SqlRunner(CliContext cli, SqlOutput output)
     public Task<bool> QueryAsync(NpgsqlConnection connection, string sql, object[] parameters, string? title, CancellationToken ct) =>
         RunOneAsync(connection, sql, parameters, title, ct);
 
+    /// <summary>Rows built in memory (catalog descriptions), shown like any query result.</summary>
+    public void Show(string? title, IReadOnlyList<string> columns, IEnumerable<object?[]> rows)
+    {
+        var result = new StatementResult(title ?? "", columns.ToList(), rows.ToList(), null, false, 0);
+        Results.Add(result);
+        Title(title);
+        Render(result);
+    }
+
+    private void Title(string? title)
+    {
+        if (title is null) return;
+        if (output.Format == "table") cli.Console.MarkupLineInterpolated($"[bold]{title}[/]");
+        else if (output.Format == "aligned") cli.Services.Out.WriteLine(title);
+    }
+
     private async Task<bool> RunOneAsync(NpgsqlConnection connection, string statement, object[] parameters, string? title, CancellationToken ct)
     {
         var watch = Stopwatch.StartNew();
@@ -93,8 +109,7 @@ internal sealed class SqlRunner(CliContext cli, SqlOutput output)
             }
 
             Results.Add(result);
-            if (title is not null && output.Format == "table") cli.Console.MarkupLineInterpolated($"[bold]{title}[/]");
-            if (title is not null && output.Format == "aligned") cli.Services.Out.WriteLine(title);
+            Title(title);
             Render(result);
             return true;
         }

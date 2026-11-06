@@ -87,6 +87,8 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
             return await new SqlShell(cli, target, label, output, settings.Yes).RunAsync(reader, ct);
         }
 
+        if (MetaCommands.IsCommand(sql)) return await RunMetaAsync(cli, target, output, sql, ct);
+
         var statements = SqlRunner.Split(sql);
         if (!SqlConfirmation.Ask(cli, SqlSafety.Changes(statements), settings.Yes))
         {
@@ -141,6 +143,24 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         if (schema is not null) builder.SearchPath = schema;
         builder.Pooling = false;
         return (builder, label);
+    }
+
+    // pgembed sql app "\d books": the describing commands work outside the prompt too
+    private static async Task<int> RunMetaAsync(CliContext cli, NpgsqlConnectionStringBuilder target, SqlOutput output, string text, CancellationToken ct)
+    {
+        var (command, argument) = MetaCommands.Split(text);
+        await using var connection = new NpgsqlConnection(target.ConnectionString);
+        await connection.OpenAsync(ct);
+
+        var runner = new SqlRunner(cli, output);
+        if (!await MetaCommands.TryRunAsync(connection, command, argument, runner, ct))
+        {
+            throw new PostgresEmbedException(
+                $"{command} works only in the interactive prompt. Here, use one of: {string.Join(", ", MetaCommands.Names)}.");
+        }
+
+        if (output.Format == "json") cli.WriteJson(new { results = runner.Results });
+        return 0;
     }
 
     private static async Task<string?> ReadSqlAsync(Settings settings, CancellationToken ct)

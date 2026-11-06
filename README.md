@@ -140,6 +140,19 @@ Without SQL to run, `pgembed sql app` opens a prompt:
 | `--check` | Check the syntax without running anything |
 | `-y, --yes` | Run changes without asking |
 
+## Schema
+
+```console
+pgembed schema app                          # tables and views, with row estimates and sizes
+pgembed schema app books                    # one table: columns, keys, indexes, constraints
+pgembed schema app orders --schema sales
+pgembed schema app "sales.*"                # every table in sales
+pgembed schema app books --json             # one structured document, for scripts and tools
+```
+
+The same descriptions are available as psql-style commands, in the interactive prompt and as
+one-shot SQL: `pgembed sql app "\d books"`, `"\dt sales.*"`, `"\dv"`, `"\df"`, `"\dn"`, `"\l"`.
+
 ## Versions and extensions
 
 ```console

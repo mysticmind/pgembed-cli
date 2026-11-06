@@ -126,6 +126,7 @@ Platforms for `--platform`: `win-x64`, `linux-x64`, `linux-arm64`, `linux-musl-x
 | `pgembed kill <name>... \| --all` | force-kill the server processes |
 | `pgembed restart <name>` | stop, then start with the same settings |
 | `pgembed logs <name> [--tail <n>] [--follow]` | the server log |
+| `pgembed schema <target> [table\|pattern] [--db] [--schema] [--json]` | tables with row estimates and sizes; for a table: columns (type, nullability, default, identity, generated, primary key), indexes and constraints with foreign key targets. `--json` gives one structured document per table. The `\d` commands render the same reader, and work as one-shot SQL too |
 | `pgembed connstr <name> [--db <db>] [--format npgsql\|uri\|env]` | connection string, `postgresql://` URI, or `PGHOST`/`PGPORT`/... lines |
 | `pgembed rm <name> [--force]` | delete the instance and its data; refuses while running unless `--force` |
 
