@@ -45,25 +45,37 @@ Override with `--cache-dir` or `PGEMBED_CACHE_DIR`.
 
 ```
 <cache>/
-  metadata/<artifact>.json          version list per platform, its ETag and fetch time
-  binaries/                         downloads (.jar, .txz, extension zips) and extracted installs
+  metadata/<artifact>.json          (CLI) version list per platform, its ETag and fetch time
+  binaries/                         (library) downloads (.jar, .txz, extension zips) and extracted installs
     postgres-<version>-<artifact>[-ext-<hash>]/
-      extensions.json               extension index, built once per install
-      .last-used                    for cache clean --unused-for
-  instances/<name>/
-    instance.json                   registry entry: version, port, settings, timestamps
+      .last-used                    (CLI) for cache clean --unused-for
+  instances/<name>/                 (library) a named instance
+    instance.json                   (CLI) registry entry: version, port, settings, timestamps
     data/                           the Postgres data folder
     postgres.log
-    .lock                           serializes start, stop and kill across processes
+    .lock                           (library) serializes start, stop and kill across processes
 ```
 
 ### Caching rules
 
-**Version metadata.** Fresh for 24 hours (configurable): resolving `17` needs no network. When stale, one conditional request with `If-None-Match` (Maven answers `304 Not Modified` when nothing changed). Offline, the cached list is used with a warning, however old. Exact versions never need metadata. `--refresh` forces a check.
+**Version metadata (CLI).** Fresh for 24 hours (configurable): resolving `17` needs no network. When stale, one conditional request with `If-None-Match` (Maven answers `304 Not Modified` when nothing changed). Offline, the cached list is used with a warning, however old. Exact versions never need metadata. `--refresh` forces a check. The CLI resolves specs itself and hands the library an exact version.
 
-**Downloads and installs.** Each version is downloaded once across all processes: a lock per archive makes concurrent test runs, the CLI and the MCP server wait for one download. Interrupted downloads resume with HTTP range requests (Maven supports them). Every archive is verified against Maven's published SHA-256. Each install is extracted once and shared by every instance of that version.
+**Downloads and installs (library).** Each version is downloaded once across all processes: a lock per archive makes concurrent test runs, the CLI and the MCP server wait for one download. Every archive is verified against Maven's published SHA-256 (since 5.1). Each install is extracted once and shared by every instance of that version. Last-used tracking for `cache clean --unused-for` is kept by the CLI.
 
-**Named instances.** The registry plus Postgres's own `postmaster.pid` tell whether an instance is running, its PID and port. A `postmaster.pid` pointing at a dead process is reported as stopped and cleaned up. A port is chosen once per instance and remembered, so connection strings never change.
+**Named instances (library and CLI).** The library tells whether an instance is running, its PID and port, from Postgres's own `postmaster.pid` and a process check; a `postmaster.pid` pointing at a dead process counts as stopped. The CLI's registry remembers each instance's settings and port, so connection strings never change across restarts.
+
+## What lives where
+
+Rule: **the library gets a feature only if a test or app using `PgServer` benefits on its own and it needs the library's internals.** Managing many instances, remembering state, presentation and policy belong in the CLI, so the library never grows CLI-shaped APIs.
+
+| Library (MysticMind.PostgresEmbed) | CLI (pgembed) |
+| --- | --- |
+| `InstanceName`, attach if running, lock per instance | instance registry: settings, timestamps, remembered port |
+| `GetStatusAsync`, cross-process `StopAsync`, `KillAsync` | names, wildcards, several versions per `start` |
+| `PGEMBED_CACHE_DIR` as the default binaries folder, cross-process download lock | version metadata cache with ETag refresh |
+| `PgPlatform.Detect()` | cache listing, cleanup, last-used tracking |
+| version specs, `InstallAsync`, extension discovery, checksums (5.1) | background and foreground modes, logs, connection-string formats |
+| later: download progress (`IProgress`), resumable downloads | SQL, schema, format, `doctor`, MCP |
 
 ## Named instances and attaching
 
@@ -170,23 +182,28 @@ Instances started through MCP are background servers, so they survive restarts o
 
 ## Library work first: MysticMind.PostgresEmbed 5.2
 
-pgembed needs these library additions. Additive, no breaking changes:
+Six small, generic additions, each useful to a test author who never uses the CLI. Additive, no breaking changes:
 
-1. **Named instances:** `PgServerOptions.InstanceName`, stored in the shared cache by default so the CLI, MCP and tests meet; attach if running (default); per-instance cross-process lock; registry entry.
-2. **Across processes:** `GetStatusAsync()` (running, PID, port, start time, from `postmaster.pid` and a process check); `StopAsync()` stops a named instance started by another process; new `KillAsync()`.
-3. **Metadata cache:** stored version lists with ETag refresh, offline fallback, configurable age.
-4. **Download cache:** opt-in shared cache through `PGEMBED_CACHE_DIR`, cross-process download lock, resumable downloads, extension index per install, last-used tracking.
-5. **Progress:** an `IProgress<>` for downloads and extraction, so pgembed can show a real progress bar.
+1. **`PgServerOptions.InstanceName`:** a stable, readable instance folder instead of a GUID. With `PGEMBED_CACHE_DIR` set, named instances live in `<cache>/instances/<name>`, where the CLI, MCP and tests meet.
+2. **Attach if running** (default for named instances): `StartAsync` on a named instance that is already running attaches instead of starting another server; the port comes from `postmaster.pid`. Only the process that started a server stops it on dispose.
+3. **A lock per instance,** so two processes cannot start or stop the same named instance at once.
+4. **Across processes:** `GetStatusAsync()` (running, PID, port, start time), `StopAsync()` for a named instance started by another process, and a new `KillAsync()`.
+5. **Shared cache:** `PGEMBED_CACHE_DIR` as the default `BinariesDir` (`<cache>/binaries`), and a cross-process lock so each archive is downloaded once.
+6. **`PgPlatform.Detect()`:** the detected OS, CPU and binaries artifact name, so the CLI does not duplicate platform detection.
+
+Later, when needed: download progress (`IProgress<>`) and resumable downloads.
 
 ## Stages
 
 | Release | Contents |
 | --- | --- |
-| Library 5.1.0 | merged (#40), to publish: version specs, `InstallAsync`, extension discovery, checksum verification |
-| Library 5.2.0 | the five items above |
-| pgembed 0.1 | discovery and cache commands, `doctor`, instances (background by default, `--foreground`, several versions), `sql` (with parser-based splitting and `--check`), `schema`, `format` |
-| pgembed 0.2 | `shell`, MCP server |
-| Later | `ext add` with curated extensions (from the planned `mysticmind-postgres-binaries`), a remote extension catalog, `schema --ddl` |
+| Library 5.1.0 | released 2026-11-06: version specs, `InstallAsync`, extension discovery, checksum verification |
+| Library 5.2.0 | the six items above |
+| pgembed 0.1 | `versions`, `install`, `extensions`, instances (`start`/`stop`/`kill`/`restart`/`status`/`connstr`/`logs`/`rm`; background by default, `--foreground`, several versions), one-shot `sql` (parser-based splitting, `--check`), `doctor`, simple `cache list`/`clean` |
+| pgembed 0.2 | MCP server |
+| When there is demand | interactive `shell`, `schema`, `format`, `ext add` with curated extensions (the planned `mysticmind-postgres-binaries`), a remote extension catalog, download progress and resumable downloads |
+
+Scope is kept lean on purpose: the differentiators (several Postgres versions without Docker, including on machines and CI runners that cannot run Docker, and a throwaway real Postgres for AI assistants) come first, and the rest waits for real demand (issues, downloads, MCP usage).
 
 ## Out of scope for now
 
