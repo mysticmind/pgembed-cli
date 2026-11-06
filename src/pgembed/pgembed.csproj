@@ -2,8 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <!-- one build that runs on .NET 8 and every later runtime -->
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- net8.0 runs on .NET 8 and 9; net10.0 on .NET 10 and later. dotnet tool install picks the
+         newest one the machine's runtime supports. They differ only in the line editor's version. -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RollForward>Major</RollForward>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -15,7 +16,7 @@
     <ToolCommandName>pgembed</ToolCommandName>
     <PackageId>pgembed</PackageId>
     <VersionPrefix>0.1.0</VersionPrefix>
-    <Description>Command-line tool for embedded PostgreSQL: list and install Postgres versions, see their extensions, manage the download cache and diagnose problems. Built on MysticMind.PostgresEmbed.</Description>
+    <Description>Run PostgreSQL locally without installing it: named instances of any version in the background, SQL with readable results and errors, version and extension discovery, and a shared download cache. Built on MysticMind.PostgresEmbed.</Description>
     <Authors>Babu Annamalai</Authors>
     <Copyright>Copyright (C) Babu Annamalai</Copyright>
     <PackageTags>postgres;postgresql;pg;embedded;cli;dotnet-tool;testing</PackageTags>
@@ -38,14 +39,25 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="pgsqlparser" Version="2.1.0" />
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
     <PackageReference Include="Spectre.Console.Cli" Version="0.57.2" />
+  </ItemGroup>
+
+  <!-- The interactive prompt's line editor. Its maintained releases (5.x and later) need .NET 10;
+       4.1 has the same API and serves .NET 8 and 9. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="PrettyPrompt" Version="4.1.1" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net8.0'">
+    <PackageReference Include="PrettyPrompt" Version="6.0.5" />
   </ItemGroup>
 
   <!-- The published library by default. To build against a local checkout before a library
        release, pass -p:PgEmbedLibraryProject=<path to MysticMind.PostgresEmbed.csproj>. -->
   <ItemGroup Condition="'$(PgEmbedLibraryProject)' == ''">
-    <PackageReference Include="MysticMind.PostgresEmbed" Version="[5.1.0, 6.0.0)" />
+    <PackageReference Include="MysticMind.PostgresEmbed" Version="[5.2.0, 6.0.0)" />
   </ItemGroup>
   <ItemGroup Condition="'$(PgEmbedLibraryProject)' != ''">
     <ProjectReference Include="$(PgEmbedLibraryProject)" />

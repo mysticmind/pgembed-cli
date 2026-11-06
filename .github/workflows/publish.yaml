@@ -1,0 +1,42 @@
+name: Publish to NuGet
+
+on: [workflow_dispatch]
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # publish only what is on main
+    if: github.ref == 'refs/heads/main'
+
+    # NuGet trusted publishing: no stored API key. The job gets a GitHub OIDC token, which
+    # nuget.org exchanges for an API key valid for one hour, provided it matches the trusted
+    # publishing policy for this repository and workflow file (nuget.org > profile > Trusted Publishing).
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Pack
+        run: dotnet pack src/pgembed/pgembed.csproj -c Release -o artifacts
+
+      # requested right before the push: the key expires after one hour
+      - name: NuGet login (OIDC to short-lived API key)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: mysticmind # nuget.org profile name of the package owner, not an email address
+
+      - name: Push
+        run: dotnet nuget push "artifacts/*.nupkg" -s https://api.nuget.org/v3/index.json -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate

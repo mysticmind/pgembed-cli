@@ -1,0 +1,63 @@
+name: Build
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+
+jobs:
+  test:
+    # The tool targets net8.0 and rolls forward; the tests run it on each supported runtime.
+    name: ${{ matrix.name }} (${{ matrix.framework }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux x64, os: ubuntu-latest, framework: net11.0 }
+          - { name: Linux x64, os: ubuntu-latest, framework: net10.0 }
+          - { name: Linux x64, os: ubuntu-latest, framework: net9.0 }
+          - { name: Linux x64, os: ubuntu-latest, framework: net8.0 }
+          - { name: Linux arm64, os: ubuntu-24.04-arm, framework: net10.0 }
+          - { name: macOS arm64, os: macos-latest, framework: net10.0 }
+          - { name: macOS x64, os: macos-15-intel, framework: net10.0 }
+          - { name: Windows x64, os: windows-latest, framework: net10.0 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Run tests
+        run: dotnet test --project tests/pgembed.Tests/pgembed.Tests.csproj --framework ${{ matrix.framework }}
+
+      - name: Pack the tool
+        run: dotnet pack src/pgembed/pgembed.csproj -c Release -o artifacts
+
+  test-alpine:
+    name: Alpine x64 (net11.0)
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/dotnet/sdk:11.0-alpine
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Postgres refuses to run as root, so the tests run as an unprivileged user
+      - name: Run tests
+        run: |
+          adduser -D tester
+          chown -R tester "$GITHUB_WORKSPACE"
+          su tester -c "cd '$GITHUB_WORKSPACE' && dotnet test --project tests/pgembed.Tests/pgembed.Tests.csproj --framework net11.0"

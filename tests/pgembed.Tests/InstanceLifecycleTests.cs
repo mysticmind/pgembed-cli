@@ -1,0 +1,181 @@
+using System.Text.Json;
+using PgEmbed.Cli.Infrastructure;
+using PgEmbed.Cli.Sql;
+using Spectre.Console.Testing;
+
+namespace PgEmbed.Cli.Tests;
+
+/// <summary>
+/// The real thing: downloads Postgres from Maven Central (once; the cache is kept between runs), starts
+/// an instance, runs SQL against it and removes it. Tests in one class run one after another.
+/// </summary>
+public class InstanceLifecycleTests : IAsyncLifetime
+{
+    private const string Version = "17";
+    private readonly string _name = TestCache.UniqueName("t");
+
+    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
+
+    // whatever happens in a test, the instance and its data go
+    public async ValueTask DisposeAsync() => await TestCli.RunAsync("rm", _name, "--force", "--yes");
+
+    [Fact]
+    public async Task Start_query_stop_and_remove()
+    {
+        // port 0: a free port, so tests running in parallel never race for 5432
+        var start = await TestCli.RunAsync("start", _name, "--version", Version, "--port", "0", "--json");
+        Assert.True(start.ExitCode == 0, start.All);
+        using var started = JsonDocument.Parse(start.Out);
+        var port = started.RootElement.GetProperty("port").GetInt32();
+        Assert.False(started.RootElement.GetProperty("attached").GetBoolean());
+
+        // a second start attaches to the running server
+        var again = await TestCli.RunAsync("start", _name, "--json");
+        using var attached = JsonDocument.Parse(again.Out);
+        Assert.True(attached.RootElement.GetProperty("attached").GetBoolean());
+        Assert.Equal(port, attached.RootElement.GetProperty("port").GetInt32());
+
+        var connstr = await TestCli.RunAsync("connstr", _name, "--format", "uri");
+        Assert.Equal($"postgresql://postgres@localhost:{port}/postgres", connstr.Out.Trim());
+        var formats = await TestCli.RunAsync("connstr", _name);
+        Assert.Contains("jdbc:postgresql://", formats.Console);
+        Assert.Contains("host=localhost", formats.Console);
+
+        // a script with a dollar-quoted body, run statement by statement
+        var script = await TestCli.RunAsync("sql", _name, "--json", "--yes",
+            "CREATE TABLE books(id int, title text); " +
+            "CREATE FUNCTION one() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql; " +
+            "INSERT INTO books VALUES (one(), 'a;b'), (2, NULL); " +
+            "SELECT id, title FROM books ORDER BY id");
+        Assert.True(script.ExitCode == 0, script.All);
+        using var results = JsonDocument.Parse(script.Out);
+        var all = results.RootElement.GetProperty("results");
+        Assert.Equal(4, all.GetArrayLength());
+        Assert.Equal(2, all[2].GetProperty("rowsAffected").GetInt32());
+        var rows = all[3].GetProperty("rows");
+        Assert.Equal("a;b", rows[0][1].GetString());
+        Assert.Equal(JsonValueKind.Null, rows[1][1].ValueKind);
+
+        var csv = await TestCli.RunAsync("sql", _name, "SELECT title FROM books WHERE id = 1", "--format", "csv");
+        Assert.Equal("title\na;b", csv.Out.Trim().ReplaceLineEndings("\n"));
+
+        // redirected output gets psql-style aligned text, one row per line
+        var piped = await TestCli.RunRedirectedAsync("sql", _name, "SELECT id, title FROM books ORDER BY id");
+        Assert.Equal(" id | title\n----+-------\n  1 | a;b\n  2 |\n(2 rows)",
+            piped.Out.TrimEnd().ReplaceLineEndings("\n"));
+
+        var failed = await TestCli.RunAsync("sql", _name, "SELECT titel FROM books");
+        Assert.Equal(1, failed.ExitCode);
+        Assert.Contains("column \"titel\" does not exist", failed.Console);
+        Assert.Contains("LINE 1: SELECT titel FROM books", failed.Console);
+
+        var status = await TestCli.RunAsync("status", _name, "--json");
+        using var statuses = JsonDocument.Parse(status.Out);
+        Assert.Equal("running", statuses.RootElement[0].GetProperty("state").GetString());
+
+        var stop = await TestCli.RunAsync("stop", _name);
+        Assert.Equal(0, stop.ExitCode);
+        var stopped = await TestCli.RunAsync("status", _name, "--json");
+        using var after = JsonDocument.Parse(stopped.Out);
+        Assert.Equal("stopped", after.RootElement[0].GetProperty("state").GetString());
+
+        // the data survives a restart
+        var restart = await TestCli.RunAsync("start", _name);
+        Assert.Equal(0, restart.ExitCode);
+        var count = await TestCli.RunAsync("sql", _name, "SELECT count(*) AS n FROM books", "--format", "csv");
+        Assert.Equal("n\n2", count.Out.Trim().ReplaceLineEndings("\n"));
+
+        var rm = await TestCli.RunAsync("rm", _name);
+        Assert.NotEqual(0, rm.ExitCode); // a running instance needs --force
+        var forced = await TestCli.RunAsync("rm", _name, "--force", "--yes");
+        Assert.Equal(0, forced.ExitCode);
+        var gone = await TestCli.RunAsync("sql", _name, "SELECT 1");
+        Assert.Equal(1, gone.ExitCode);
+    }
+
+    [Fact]
+    public async Task Interactive_prompt_confirms_changes_and_describes_tables()
+    {
+        var start = await TestCli.RunAsync("start", _name, "--version", Version, "--port", "0", "--json");
+        Assert.True(start.ExitCode == 0, start.All);
+
+        var console = new TestConsole().Width(250).Interactive();
+        console.Input.PushTextWithEnter("y"); // create the table
+        console.Input.PushTextWithEnter("n"); // but not delete its rows
+        var services = new CliServices(console, new StringWriter(), new StringWriter(), new HttpClient());
+        var cli = new CliContext(new GlobalSettings(), services);
+        var (target, label) = await Commands.SqlCommand.ResolveTargetAsync(cli, _name, null, null, TestContext.Current.CancellationToken);
+
+        var reader = new ScriptReader(
+            "CREATE TABLE books(id int PRIMARY KEY, title text);",
+            "INSERT INTO books VALUES (1, 'a'), (2, 'b');",
+            "\\dt",
+            "\\d books",
+            "DELETE FROM books;",
+            "SELECT count(*) AS n FROM books;",
+            "\\x",
+            "SELECT title FROM books WHERE id = 2;",
+            "\\q",
+            "SELECT 'never reached';");
+        var exit = await new SqlShell(cli, target, label, new SqlOutput { StreamJson = true }, yes: false)
+            .RunAsync(reader, TestContext.Current.CancellationToken);
+
+        var output = console.Output;
+        Assert.Equal(0, exit);
+        Assert.Contains("changes the schema", output);
+        Assert.Contains("2 rows affected", output);
+        Assert.Contains("books", output);                     // \dt
+        Assert.Contains("books_pkey", output);                // \d books: its index
+        Assert.Contains("deletes every row of books (no WHERE)", output);
+        Assert.Contains("Not run.", output);
+        Assert.Contains("RECORD 1", output);                  // \x
+        Assert.DoesNotContain("never reached", output);
+        Assert.True(reader.SawBooks);                         // completion learned about the new table
+
+        // the DELETE was declined: both rows are still there
+        var count = await TestCli.RunAsync("sql", _name, "SELECT count(*) AS n FROM books", "--format", "csv");
+        Assert.Equal("n\n2", count.Out.Trim().ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public async Task Sql_takes_a_connection_string_and_a_schema()
+    {
+        var start = await TestCli.RunAsync("start", _name, "--version", Version, "--port", "0", "--json");
+        using var started = JsonDocument.Parse(start.Out);
+        var port = started.RootElement.GetProperty("port").GetInt32();
+
+        var setup = await TestCli.RunAsync("sql", _name, "--yes",
+            "CREATE SCHEMA sales; CREATE TABLE sales.orders(id int); INSERT INTO sales.orders VALUES (1), (2), (3)");
+        Assert.True(setup.ExitCode == 0, setup.All);
+
+        var bySchema = await TestCli.RunAsync("sql", _name, "--schema", "sales", "SELECT count(*) AS n FROM orders", "--format", "csv");
+        Assert.Equal("n\n3", bySchema.Out.Trim().ReplaceLineEndings("\n"));
+
+        foreach (var format in new[] { "uri", "libpq", "jdbc", "npgsql" })
+        {
+            var connection = (await TestCli.RunAsync("connstr", _name, "--format", format, "--schema", "sales")).Out.Trim();
+            var run = await TestCli.RunAsync("sql", connection, "SELECT count(*) AS n FROM orders", "--format", "csv");
+            Assert.True(run.ExitCode == 0, $"{format}: {connection}\n{run.All}");
+            Assert.Equal("n\n3", run.Out.Trim().ReplaceLineEndings("\n"));
+        }
+
+        var uri = $"postgresql://postgres@localhost:{port}/postgres";
+        var withDb = await TestCli.RunAsync("sql", uri, "--db", "template1", "SELECT current_database() AS db", "--format", "csv");
+        Assert.Equal("db\ntemplate1", withDb.Out.Trim().ReplaceLineEndings("\n"));
+    }
+
+    /// <summary>Feeds the shell fixed lines, as if typed.</summary>
+    private sealed class ScriptReader(params string[] lines) : ILineReader
+    {
+        private readonly Queue<string> _lines = new(lines);
+        public bool SawBooks { get; private set; }
+
+        public Task<LineResult?> ReadAsync(string prompt, Func<SqlCatalog> catalog)
+        {
+            SawBooks |= catalog().Relations.Any(r => r.Name == "books");
+            return Task.FromResult(_lines.TryDequeue(out var line) ? new LineResult(true, line) : null);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}

@@ -131,17 +131,26 @@ Platforms for `--platform`: `win-x64`, `linux-x64`, `linux-arm64`, `linux-musl-x
 
 Names accept wildcards where several instances make sense: `pgembed stop ci-*`.
 
-### SQL and schema (decided: pgembed instances only, for now)
+### SQL (decided: instances and any connection string)
 
 | Command | Does |
 | --- | --- |
-| `pgembed sql <name> "<sql>" \| -f <file> \| (stdin) [--db <db>] [--format table\|json\|csv\|markdown] [--timing]` | run SQL; each statement shows its result set or affected rows; errors show the message and mark the failing position |
-| `pgembed schema <name> [<table>] [--schema <schema>] [--db <db>]` | tables with row estimates and sizes; for one table: columns, types, nullability, defaults, primary key, indexes, foreign keys, checks |
-| `pgembed shell <name> [--db <db>]` (0.2) | interactive: history per instance, multi-line statements, SQL highlighting, completion of keywords and your tables and columns, and `psql`-style commands: `\dt`, `\d <table>`, `\dn`, `\di`, `\dx`, `\l`, `\c <db>`, `\x`, `\timing`, `\i <file>`, `\q` |
+| `pgembed sql <target> "<sql>" \| -f <file> \| (stdin) [--db <db>] [--schema <schema>] [--format table\|aligned\|json\|csv\|markdown] [--timing] [--yes]` | run SQL; each statement shows its result set or affected rows; errors show the message, mark the failing position, and add the server's detail and hint |
+| `pgembed sql <target>` (no SQL, in a terminal) | interactive prompt: highlighting, syntax errors underlined as you type, multi-line statements (Enter runs once the statement ends with a semicolon), completion of keywords, schemas, tables and columns, persistent history, and psql-style commands: `\d [name]`, `\dt`, `\dv`, `\df`, `\dn`, `\l`, `\c <db>`, `\conninfo`, `\x`, `\timing`, `\format`, `\i <file>`, `\q` |
+| `pgembed connstr <name> [--db] [--schema] [--format npgsql\|uri\|libpq\|jdbc\|env]` | every format by default; one, plain, with `--format` |
+| `pgembed format ["<sql>"] [-f <file>]... [--check]` (later) | format SQL; `--check` exits 1 when a file is not formatted (a CI lint); needs no server |
 
-| `pgembed format ["<sql>"] [-f <file>]... [--check]` | format SQL from arguments, files or stdin; `--check` exits 1 when a file is not formatted (a CI lint); needs no server |
-
-The table view caps rows (default 500) and says when it truncates; `json` and `csv` return everything.
+- The target is an instance name or a connection string: Npgsql, `postgresql://` URI, libpq
+  `key=value` or JDBC. Passwords can come from `PGPASSWORD` or `~/.pgpass`.
+- Confirmation: statements that change the schema (DDL, `TRUNCATE`, `SELECT INTO`) or existing rows
+  (`UPDATE`, `DELETE`, `MERGE`, data-modifying CTEs, and these under `EXPLAIN ANALYZE`) are listed
+  and confirmed before anything runs; `UPDATE`/`DELETE` without `WHERE` are called out. Reads and
+  `INSERT` do not ask. Without a terminal they are refused unless `--yes`. `rm` confirms too.
+- Output: `table` (Spectre, fits the terminal) is the default in a terminal; `aligned` (psql-style,
+  never wrapped) when output is redirected. The table view caps rows (default 500) and says when it
+  truncates; the other formats return everything.
+- The line editor is PrettyPrompt: 4.1 in the net8.0 build (.NET 8 and 9), 6.x in the net10.0 build
+  (.NET 10 and later); same API. Terminals without a size get plain line input.
 
 ### Using the PostgreSQL parser (pgsqlparser)
 
