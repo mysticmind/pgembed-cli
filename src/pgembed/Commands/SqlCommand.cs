@@ -166,7 +166,7 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
             }
 
             if (port is null) throw new PostgresEmbedException($"'{target}' is not running. Start it with: pgembed start {target}");
-            builder = new NpgsqlConnectionStringBuilder(InstanceManager.ConnectionString(port.Value));
+            builder = new NpgsqlConnectionStringBuilder(InstanceManager.ConnectionString(port.Value, password: cli.Registry.Get(target)?.Password));
             // instances trust local connections: no Kerberos probe (on Alpine it prints a missing-library error)
             builder.GssEncryptionMode = GssEncryptionMode.Disable;
             label = target;

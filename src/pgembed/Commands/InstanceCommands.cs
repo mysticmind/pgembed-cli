@@ -30,6 +30,10 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
         [Description("Extension zip to install; append #sha256=<hex> to verify it. Repeatable")]
         public string[] Extensions { get; set; } = [];
 
+        [CommandOption("--password")]
+        [Description("Require a password for TCP connections, for shared machines: pgembed generates it and keeps it in the instance's private settings; pgembed connstr prints it")]
+        public bool Password { get; set; }
+
         [CommandOption("--locale <LOCALE>")]
         [Description("Locale for a new instance's data (default: en_US.UTF-8; on Linux without it, C.UTF-8)")]
         public string? Locale { get; set; }
@@ -70,7 +74,7 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
             StartResult result = null!;
             await InstallCommand.Spin(cli, $"Starting {name}", async () => result = await cli.Instances.StartAsync(
                 name, version, settings.Port, parameters, settings.Extensions, keepRunningAfterExit: !settings.Foreground,
-                settings.Refresh, ct, settings.Locale));
+                settings.Refresh, ct, settings.Locale, settings.Password));
 
             if (settings.Foreground && result.Attached)
             {
@@ -80,14 +84,17 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
             }
 
             var port = result.Server.PgPort;
-            results.Add(new StartedInstance(name, result.Record.Version, port, result.Attached, InstanceManager.ConnectionString(port)));
+            // a password is not printed here (terminal scrollback, CI logs): pgembed connstr prints it on request
+            var shown = Connections.Mask(InstanceManager.ConnectionString(port, password: result.Record.Password));
+            results.Add(new StartedInstance(name, result.Record.Version, port, result.Attached, shown));
 
             if (!settings.Json)
             {
                 cli.Console.MarkupLineInterpolated(result.Attached
                     ? (FormattableString)$"[green]●[/] [bold]{name}[/] is already running: PostgreSQL {result.Record.Version} on port {port}"
                     : $"[green]●[/] Started [bold]{name}[/]: PostgreSQL {result.Record.Version} on port {port}");
-                cli.Console.MarkupLineInterpolated($"  [dim]{InstanceManager.ConnectionString(port)}[/]");
+                cli.Console.MarkupLineInterpolated($"  [dim]{shown}[/]");
+                if (result.Record.Password is not null) cli.Console.MarkupLineInterpolated($"  [dim]password required; pgembed connstr {name} prints it[/]");
             }
 
             if (settings.Foreground)
@@ -301,7 +308,8 @@ internal sealed class ConnStrCommand(CliServices services) : AsyncCommand<ConnSt
 
         var port = runningPort ?? cli.Registry.Get(settings.Name)?.Port
                    ?? throw new PostgresEmbedException($"'{settings.Name}' has no known port yet: start it once with pgembed start {settings.Name}");
-        string Format(string format) => Connections.Format(format, port, settings.Database, settings.Schema);
+        var password = cli.Registry.Get(settings.Name)?.Password;
+        string Format(string format) => Connections.Format(format, port, settings.Database, settings.Schema, password: password);
 
         if (settings.Json)
         {

@@ -18,6 +18,7 @@ public class SecretsTests
     [InlineData("Host=db;SSL Password=S3cretPw")]
     [InlineData("jdbc:postgresql://db/shop?user=me&password=S3cretPw&ssl=true")]
     [InlineData("error near 'Password=S3cretPw;Host=x'")]
+    [InlineData("PGHOST=localhost\nPGPASSWORD=S3cretPw")]
     public void Masks_passwords_in_every_form(string text)
     {
         var masked = Connections.Mask(text);
@@ -114,5 +115,64 @@ public class ServerAccessTests
         Assert.Equal(1, run.ExitCode);
         Assert.Contains("reads files on this machine", run.All);
         Assert.Contains("Nothing was run", run.All);
+    }
+}
+
+/// <summary>start --password: TCP needs the generated password; pgembed uses it; MCP never shows it.</summary>
+public class PasswordInstanceTests : IAsyncLifetime
+{
+    private readonly string _name = TestCache.UniqueName("pw");
+
+    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
+
+    public async ValueTask DisposeAsync() => await TestCli.RunAsync("rm", _name, "--force", "--yes");
+
+    [Fact]
+    public async Task Requires_the_password_over_tcp_and_keeps_it_private()
+    {
+        var started = await TestCli.RunAsync("start", _name, "--version", "17", "--port", "0", "--password");
+        Assert.True(started.ExitCode == 0, started.All);
+        Assert.Contains("Password=***", started.Console);
+
+        var connstr = (await TestCli.RunAsync("connstr", _name, "--format", "npgsql")).Out.Trim();
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(connstr);
+        Assert.Equal(32, builder.Password!.Length);
+
+        // without it, a TCP connection is refused
+        builder.Password = null;
+        builder.GssEncryptionMode = Npgsql.GssEncryptionMode.Disable;
+        await using (var anonymous = new Npgsql.NpgsqlConnection(builder.ConnectionString))
+        {
+            await Assert.ThrowsAnyAsync<Npgsql.NpgsqlException>(() => anonymous.OpenAsync(TestContext.Current.CancellationToken));
+        }
+
+        // pgembed's own commands use it
+        var sql = await TestCli.RunAsync("sql", _name, "SELECT 1 AS one", "--format", "csv");
+        Assert.True(sql.ExitCode == 0, sql.All);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            var settings = Path.Combine(TestCache.Directory, "instances", _name, "instance.json");
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(settings));
+        }
+
+        // MCP uses it for the assistant, and masks it
+        var tools = new Mcp.PgEmbedTools(Commands.McpCommand.Quiet(new Infrastructure.GlobalSettings(), TextWriter.Null, new HttpClient()),
+            new Mcp.McpPolicy(false, false, false));
+        await using (tools)
+        {
+            var shown = await tools.GetConnectionString(_name, "uri", ct: TestContext.Current.CancellationToken);
+            Assert.Contains(":***@", ((McpConnectionString)shown).ConnectionString);
+        }
+    }
+
+    [Fact]
+    public void Every_format_carries_the_password()
+    {
+        foreach (var format in Connections.FormatNames)
+        {
+            Assert.Contains("S3cretPw", Connections.Format(format, 5433, "shop", null, password: "S3cretPw"));
+            Assert.DoesNotContain("S3cretPw", Connections.Mask(Connections.Format(format, 5433, "shop", null, password: "S3cretPw")));
+        }
     }
 }

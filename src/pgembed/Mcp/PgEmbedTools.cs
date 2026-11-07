@@ -108,7 +108,9 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         lock (_started) _started.Add(result.Server);
 
         return new StartedInstance(name, result.Record.Version, serverPort, result.Attached,
-            InstanceManager.ConnectionString(serverPort), Connections.Format("uri", serverPort, InstanceManager.DefaultDatabase, null));
+            // a password stays with pgembed, which uses it for the assistant: masked here
+            Connections.Mask(InstanceManager.ConnectionString(serverPort, password: result.Record.Password)),
+            Connections.Mask(Connections.Format("uri", serverPort, InstanceManager.DefaultDatabase, null, password: result.Record.Password)));
     }
 
     [McpServerTool(Name = "list_instances", ReadOnly = true, Idempotent = true)]
@@ -190,7 +192,11 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     {
         if (!Connections.FormatNames.Contains(format)) throw new McpException($"format is one of: {string.Join(", ", Connections.FormatNames)}");
         var port = await RunningPortAsync(name, ct);
-        return new McpConnectionString(name, format, Connections.Format(format, port, database ?? InstanceManager.DefaultDatabase, schema));
+        // a password-protected instance's password is masked: pgembed uses it for the assistant, and the user gets it
+        // with pgembed connstr
+        var password = cli.Registry.Get(name)?.Password;
+        return new McpConnectionString(name, format,
+            Connections.Mask(Connections.Format(format, port, database ?? InstanceManager.DefaultDatabase, schema, password: password)));
     }
 
     [McpServerTool(Name = "get_logs", ReadOnly = true, Idempotent = true)]

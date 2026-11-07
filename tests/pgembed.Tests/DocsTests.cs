@@ -29,6 +29,11 @@ public class DocsTests
         var run = await TestCli.RunWithWidthAsync(100, args);
         var help = string.Join('\n', run.Out.ReplaceLineEndings("\n").Split('\n').Select(l => l.TrimEnd())).Trim() + "\n";
 
+        // the help itself, not an error: a required argument must not stop --help
+        Assert.True(run.ExitCode == 0, run.All);
+        Assert.Contains("Usage:", help);
+        Assert.Contains("Options:", help);
+
         var name = command.Length == 0 ? "pgembed" : command.Replace(' ', '-');
         Check(Path.Combine("docs", "reference", "cli", name + ".txt"), help);
     }

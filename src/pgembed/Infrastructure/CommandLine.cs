@@ -159,7 +159,8 @@ internal sealed class CliApp
     {
         var parse = Root.Parse(args);
 
-        if (parse.Errors.Count > 0)
+        // --help wins over a missing argument: `pgembed start --help` shows the help, not an error
+        if (parse.Errors.Count > 0 && parse.Action is not PrintHelp)
         {
             foreach (var error in parse.Errors) _services.Console.MarkupLineInterpolated($"[red]error:[/] {error.Message}");
             var path = CommandPath(parse.CommandResult.Command);

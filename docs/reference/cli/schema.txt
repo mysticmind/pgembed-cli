@@ -1,1 +1,29 @@
+Description:
+  List tables, or describe one: columns, keys, indexes, constraints
 
+  Examples:
+    pgembed schema app
+    pgembed schema app books
+    pgembed schema app orders --schema sales --json
+
+Usage:
+  pgembed schema <target> [<table>] [options]
+
+Arguments:
+  <target>  An instance name, or a connection string: Npgsql, postgresql:// URI, libpq key=value or
+            JDBC
+  <table>   A table or view to describe; * and ? describe every match. Without it, lists the tables
+            and views
+
+Options:
+  --db <DATABASE>     Database (default: postgres for an instance, else the connection string's)
+  --schema <SCHEMA>   Only this schema; unqualified table names are looked up in it
+  --format <FORMAT>   table (the default in a terminal), aligned (the default when redirected), csv
+                      or markdown; --json for structured output
+  --cache-dir <PATH>  Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR, else the
+                      per-user cache folder)
+  --maven-repo <URL>  Maven repository or mirror with the Postgres binaries (default: Maven Central,
+                      or PGEMBED_MAVEN_REPO)
+  --json              Machine-readable output
+  --verbose           Log details to standard error
+  -h, --help          Show help and usage information

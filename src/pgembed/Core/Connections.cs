@@ -13,20 +13,25 @@ internal static partial class Connections
 {
     public static readonly string[] FormatNames = ["npgsql", "uri", "libpq", "jdbc", "env"];
 
-    public static string Format(string format, int port, string database, string? schema, string host = "localhost", string user = InstanceManager.DefaultUser)
+    public static string Format(string format, int port, string database, string? schema, string host = "localhost",
+        string user = InstanceManager.DefaultUser, string? password = null)
     {
         var nl = Environment.NewLine;
         return format switch
         {
-            "npgsql" => $"Host={host};Port={port};Username={user};Database={database}" + (schema is null ? "" : $";Search Path={schema}"),
-            "uri" => $"postgresql://{Uri.EscapeDataString(user)}@{host}:{port}/{Uri.EscapeDataString(database)}"
+            "npgsql" => $"Host={host};Port={port};Username={user};Database={database}" + (schema is null ? "" : $";Search Path={schema}")
+                        + (password is null ? "" : $";Password={password}"),
+            "uri" => $"postgresql://{Uri.EscapeDataString(user)}{(password is null ? "" : ":" + Uri.EscapeDataString(password))}@{host}:{port}/{Uri.EscapeDataString(database)}"
                      + (schema is null ? "" : "?options=" + Uri.EscapeDataString($"-c search_path={schema}")),
             "libpq" => $"host={host} port={port} user={LibpqQuote(user)} dbname={LibpqQuote(database)}"
-                       + (schema is null ? "" : $" options={LibpqQuote($"-c search_path={schema}")}"),
+                       + (schema is null ? "" : $" options={LibpqQuote($"-c search_path={schema}")}")
+                       + (password is null ? "" : $" password={LibpqQuote(password)}"),
             "jdbc" => $"jdbc:postgresql://{host}:{port}/{Uri.EscapeDataString(database)}?user={Uri.EscapeDataString(user)}"
-                      + (schema is null ? "" : $"&currentSchema={Uri.EscapeDataString(schema)}"),
+                      + (schema is null ? "" : $"&currentSchema={Uri.EscapeDataString(schema)}")
+                      + (password is null ? "" : $"&password={Uri.EscapeDataString(password)}"),
             "env" => $"PGHOST={host}{nl}PGPORT={port}{nl}PGUSER={user}{nl}PGDATABASE={database}"
-                     + (schema is null ? "" : $"{nl}PGOPTIONS='-c search_path={schema}'"),
+                     + (schema is null ? "" : $"{nl}PGOPTIONS='-c search_path={schema}'")
+                     + (password is null ? "" : $"{nl}PGPASSWORD={password}"),
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
         };
     }
@@ -239,7 +244,7 @@ internal static partial class Connections
     [System.Text.RegularExpressions.GeneratedRegex(@"((?:^|://|\s)[^:/@\s;]*:)[^@/\s]+@")]
     private static partial System.Text.RegularExpressions.Regex UserInfoPassword();
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"(?i)(\b(?:password|pwd|ssl ?password|sslpassword)\s*=\s*)('(?:[^'\\]|\\.)*'|[^;&\s]*)")]
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?i)(\b(?:pgpassword|password|pwd|ssl ?password|sslpassword)\s*=\s*)('(?:[^'\\]|\\.)*'|[^;&\s]*)")]
     private static partial System.Text.RegularExpressions.Regex KeyPassword();
 
     /// <summary>A PostgreSQL position (1-based, in Unicode code points) as a 0-based UTF-16 index.</summary>

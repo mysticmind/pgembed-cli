@@ -27,7 +27,8 @@ internal sealed class InstanceManager(
 
     public async Task<StartResult> StartAsync(
         string name, string? versionSpec, int? port, IReadOnlyDictionary<string, string> serverParams,
-        IReadOnlyList<string> extensions, bool keepRunningAfterExit, bool refresh, CancellationToken ct, string? locale = null)
+        IReadOnlyList<string> extensions, bool keepRunningAfterExit, bool refresh, CancellationToken ct, string? locale = null,
+        bool requirePassword = false)
     {
         var record = registry.Get(name);
         var dataMajor = registry.DataMajor(name);
@@ -68,12 +69,18 @@ internal sealed class InstanceManager(
         }
 
         var isNew = record is null && dataMajor is null;
+
+        // only you can connect through the Unix socket (Postgres makes it 0777 by default, so any local user could
+        // connect as the superuser without a password); kept out of the saved settings, applied on every start
+        var effective = new Dictionary<string, string>(parameters);
+        if (!OperatingSystem.IsWindows()) effective.TryAdd("unix_socket_permissions", "0700");
+
         var options = new PgServerOptions
         {
             PgVersion = version,
             InstanceName = name,
             Port = chosenPort,
-            ServerParams = parameters,
+            ServerParams = effective,
             Extensions = extensionList.Select(ParseExtension).ToList(),
             KeepRunningAfterExit = keepRunningAfterExit,
             MavenRepo = mavenRepo,
@@ -97,9 +104,13 @@ internal sealed class InstanceManager(
             throw;
         }
 
+        // once set, a password stays: the instance's pg_hba.conf asks for it
+        var password = record?.Password;
+        if (requirePassword && password is null) password = await RequirePasswordAsync(name, server.PgPort, ct).ConfigureAwait(false);
+
         var now = DateTimeOffset.UtcNow;
         var saved = new InstanceRecord(name, version, server.PgPort, parameters, extensionList,
-            record?.CreatedAt ?? now, server.IsAttached ? record?.LastStartedAt ?? now : now);
+            record?.CreatedAt ?? now, server.IsAttached ? record?.LastStartedAt ?? now : now, password);
         registry.Save(saved);
 
         return new StartResult(server, server.IsAttached, saved);
@@ -221,8 +232,39 @@ internal sealed class InstanceManager(
 
     public string LogFile(string name) => Path.Combine(workspace.InstanceDir(name), "postgres.log");
 
-    public static string ConnectionString(int port, string database = DefaultDatabase, string? schema = null) =>
-        Connections.Format("npgsql", port, database, schema);
+    public static string ConnectionString(int port, string database = DefaultDatabase, string? schema = null, string? password = null) =>
+        Connections.Format("npgsql", port, database, schema, password: password);
+
+    /// <summary>
+    /// For shared machines: a generated password for the superuser, and TCP connections (127.0.0.1, ::1) that need
+    /// it, with SCRAM. The Unix socket stays passwordless, but only you can open it (it is 0700). Returns the
+    /// password, which the caller keeps in the instance's private settings.
+    /// </summary>
+    private async Task<string> RequirePasswordAsync(string name, int port, CancellationToken ct)
+    {
+        // 32 characters from a URL-safe alphabet: nothing to quote or escape in any connection string format
+        var password = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24))
+            .Replace('+', '-').Replace('/', '_');
+
+        await using (var connection = new Npgsql.NpgsqlConnection(ConnectionString(port) + ";Pooling=false"))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            await using var alter = new Npgsql.NpgsqlCommand($"ALTER ROLE {DefaultUser} PASSWORD '{password}'", connection);
+            await alter.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+            var hba = Path.Combine(workspace.InstanceDir(name), "data", "pg_hba.conf");
+            var lines = (await File.ReadAllLinesAsync(hba, ct).ConfigureAwait(false))
+                .Select(line => line.TrimStart().StartsWith("host", StringComparison.Ordinal) && line.TrimEnd().EndsWith("trust", StringComparison.Ordinal)
+                    ? line.TrimEnd()[..^"trust".Length] + "scram-sha-256"
+                    : line);
+            await File.WriteAllLinesAsync(hba, lines, ct).ConfigureAwait(false);
+
+            await using var reload = new Npgsql.NpgsqlCommand("SELECT pg_reload_conf()", connection);
+            await reload.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        return password;
+    }
 
     /// <summary>
     /// A locale initdb can use. The library's default, en_US.UTF-8, is missing from many Linux images (the .NET SDK

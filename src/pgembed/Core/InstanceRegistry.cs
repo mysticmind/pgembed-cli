@@ -11,7 +11,8 @@ internal sealed record InstanceRecord(
     Dictionary<string, string> ServerParams,
     List<string> Extensions,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? LastStartedAt);
+    DateTimeOffset? LastStartedAt,
+    string? Password = null);
 
 /// <summary>
 /// The instance registry: one <c>instance.json</c> per instance folder. Instances created by the library
@@ -38,9 +39,11 @@ internal sealed class InstanceRegistry(Workspace workspace)
     public void Save(InstanceRecord record)
     {
         var dir = workspace.InstanceDir(record.Name);
-        Directory.CreateDirectory(dir);
+        Infrastructure.PrivateFiles.Folder(dir);
         var file = Path.Combine(dir, FileName);
         var temp = $"{file}.{Guid.NewGuid():N}.tmp";
+        File.WriteAllText(temp, ""); // created first so it is private before it holds anything
+        Infrastructure.PrivateFiles.File(temp);
         File.WriteAllText(temp, Json.Serialize(record));
         File.Move(temp, file, overwrite: true);
     }

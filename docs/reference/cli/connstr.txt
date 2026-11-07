@@ -1,1 +1,24 @@
+Description:
+  Print an instance's connection string
 
+  Examples:
+    pgembed connstr app --format uri
+
+Usage:
+  pgembed connstr <name> [options]
+
+Arguments:
+  <name>
+
+Options:
+  --db <DATABASE>     Database (default: postgres)
+  --schema <SCHEMA>   Schema to put first on the search path
+  --format <FORMAT>   Only this format, unlabelled: npgsql, uri, libpq, jdbc or env. Default: all of
+                      them
+  --cache-dir <PATH>  Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR, else the
+                      per-user cache folder)
+  --maven-repo <URL>  Maven repository or mirror with the Postgres binaries (default: Maven Central,
+                      or PGEMBED_MAVEN_REPO)
+  --json              Machine-readable output
+  --verbose           Log details to standard error
+  -h, --help          Show help and usage information
