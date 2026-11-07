@@ -77,6 +77,28 @@ Under Native AOT every command is well inside its budget: the slowest, `sql --ch
 5. **The prompt (measured; no debounce).** Highlighting and the syntax check of a 200-line statement take 1 ms per keystroke, so a debounce would only add lag.
 6. **Measure (built).** `bench/pgembed.Benchmarks` (BenchmarkDotNet) for the core without a server: the prompt, split, classify, check, format and rendering. `bench/budgets.py` for the budgets above, end to end.
 
+## Security (built, 0.2)
+
+Threat model: instances run as the user with the `postgres` superuser and trust local connections, so SQL can act
+with the user's permissions; an AI assistant using the MCP server may be steered by text it reads (prompt
+injection); other users may share the machine; downloads cross the network; data printed to a terminal is
+untrusted. What holds (each with tests):
+
+| Concern | What pgembed does |
+| --- | --- |
+| SQL reaching outside the database | asks first (CLI, prompt, MCP); read-only refuses: DO, CALL, EXECUTE, LOAD, COPY PROGRAM, COPY to or from a file, and built-in functions that touch files, other servers, the server, or run SQL text (`SqlSafety.ServerAccess`) |
+| Read-only mode | the check above, plus transaction control, `RESET ALL`, `set_config`; a read-only transaction; on PostgreSQL 14+ as a superuser, `SET LOCAL ROLE pg_read_all_data`, which holds even through user functions |
+| `explain_query` | one statement the parser reads; otherwise a `COMMIT` inside it could end the rolled-back transaction |
+| Passwords | masked in every error and MCP result (`Connections.Mask`); MCP named connections (`--connection`) keep connection strings out of the conversation |
+| Other local users | the Unix socket is 0700; `start --password` for shared machines (SCRAM over TCP, a generated password in 0600 settings); trust stays the default so library tests attach without one |
+| Files | instance settings and prompt history 0600, folders 0700; archive extraction keeps every entry and link inside the install |
+| Terminals | control characters in data, names, server messages and logs shown as symbols, never sent; pipes and files unchanged |
+| Downloads | Maven SHA-256 checked; https or local repositories only (`PGEMBED_ALLOW_HTTP_REPO=1` to override); http extensions need `#sha256=`; library 5.3 `RequireChecksum` refuses mirrors that publish none |
+| Runaway queries | MCP statement timeout (120 s, `--statement-timeout`); none from the CLI, where Ctrl+C cancels |
+
+Not covered, by design: functions the user defines (a superuser can do anything through them); trust
+authentication by default; `--no-confirm` and `--allow-external-writes`, which turn protections off on request.
+
 ## Packaging and repos
 
 | | |

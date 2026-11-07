@@ -58,6 +58,7 @@ export default defineConfig({
           { text: 'In CI', link: '/guide/ci' },
           { text: 'With AI Assistants (MCP)', link: '/guide/mcp' },
           { text: 'Performance', link: '/guide/performance' },
+          { text: 'Security', link: '/guide/security' },
         ],
       },
       {
