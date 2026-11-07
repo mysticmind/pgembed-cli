@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <!-- net8.0 runs on .NET 8 and 9; net10.0 on .NET 10 and later. dotnet tool install picks the
-         newest one the machine's runtime supports. They differ only in the line editor's version. -->
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <!-- .NET 10 and later (RollForward). .NET 8 and 9 reach end of support on 2026-11-10, and
+         platform-specific tool packages need the .NET 10 SDK to install anyway. -->
+    <TargetFramework>net10.0</TargetFramework>
     <RollForward>Major</RollForward>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -15,6 +15,13 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>pgembed</ToolCommandName>
     <PackageId>pgembed</PackageId>
+    <!-- One package per platform, precompiled (ReadyToRun) for a faster start, plus a portable "any"
+         package for other platforms; a top-level package points at them, and dotnet tool install and
+         dnx pick the right one. Push the platform packages before the top-level one. -->
+    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-x64;osx-arm64;any</RuntimeIdentifiers>
+    <ToolPackageRuntimeIdentifiers>$(RuntimeIdentifiers)</ToolPackageRuntimeIdentifiers>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <SelfContained>false</SelfContained>
     <!-- also an MCP server: nuget.org shows its configuration, and dnx pgembed mcp runs it -->
     <PackageType>McpServer</PackageType>
     <VersionPrefix>0.2.0</VersionPrefix>
@@ -51,12 +58,8 @@
     <PackageReference Include="Spectre.Console.Cli" Version="0.57.2" />
   </ItemGroup>
 
-  <!-- The interactive prompt's line editor. Its maintained releases (5.x and later) need .NET 10;
-       4.1 has the same API and serves .NET 8 and 9. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
-    <PackageReference Include="PrettyPrompt" Version="4.1.1" />
-  </ItemGroup>
-  <ItemGroup Condition="'$(TargetFramework)' != 'net8.0'">
+  <!-- the interactive prompt's line editor -->
+  <ItemGroup>
     <PackageReference Include="PrettyPrompt" Version="6.0.5" />
   </ItemGroup>
 

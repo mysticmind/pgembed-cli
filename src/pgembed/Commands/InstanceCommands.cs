@@ -31,6 +31,10 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
         [Description("Extension zip to install; append #sha256=<hex> to verify it. Repeatable")]
         public string[] Extensions { get; set; } = [];
 
+        [CommandOption("--locale <LOCALE>")]
+        [Description("Locale for a new instance's data (default: en_US.UTF-8; on Linux without it, C.UTF-8)")]
+        public string? Locale { get; set; }
+
         [CommandOption("--foreground")]
         [Description("Stay attached and stream the log; Ctrl+C stops the server")]
         public bool Foreground { get; set; }
@@ -67,7 +71,7 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
             StartResult result = null!;
             await InstallCommand.Spin(cli, $"Starting {name}", async () => result = await cli.Instances.StartAsync(
                 name, version, settings.Port, parameters, settings.Extensions, keepRunningAfterExit: !settings.Foreground,
-                settings.Refresh, ct));
+                settings.Refresh, ct, settings.Locale));
 
             if (settings.Foreground && result.Attached)
             {

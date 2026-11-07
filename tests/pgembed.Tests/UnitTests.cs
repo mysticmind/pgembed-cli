@@ -221,3 +221,18 @@ internal sealed class FakeMaven(Func<HttpRequestMessage, HttpResponseMessage> re
         return Task.FromResult(respond(request));
     }
 }
+
+public class LocaleTests
+{
+    [Fact]
+    public void Keeps_the_default_when_en_US_exists() => Assert.Null(InstanceManager.ChooseLocale(["C", "C.utf8", "en_US.utf8", "POSIX"]));
+
+    [Fact]
+    public void Uses_C_UTF8_when_en_US_is_missing() => Assert.Equal("C.UTF-8", InstanceManager.ChooseLocale(["C", "C.utf8", "POSIX"]));
+
+    [Fact]
+    public void Falls_back_to_C() => Assert.Equal("C", InstanceManager.ChooseLocale(["C", "POSIX"]));
+
+    [Fact]
+    public void Keeps_the_default_when_nothing_is_listed() => Assert.Null(InstanceManager.ChooseLocale([]));
+}

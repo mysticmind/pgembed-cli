@@ -27,7 +27,7 @@ internal sealed class InstanceManager(
 
     public async Task<StartResult> StartAsync(
         string name, string? versionSpec, int? port, IReadOnlyDictionary<string, string> serverParams,
-        IReadOnlyList<string> extensions, bool keepRunningAfterExit, bool refresh, CancellationToken ct)
+        IReadOnlyList<string> extensions, bool keepRunningAfterExit, bool refresh, CancellationToken ct, string? locale = null)
     {
         var record = registry.Get(name);
         var dataMajor = registry.DataMajor(name);
@@ -67,7 +67,8 @@ internal sealed class InstanceManager(
                 $"Port {chosenPort} is in use by another program. Start '{name}' on another port with --port <n>.");
         }
 
-        var server = new PgServer(new PgServerOptions
+        var isNew = record is null && dataMajor is null;
+        var options = new PgServerOptions
         {
             PgVersion = version,
             InstanceName = name,
@@ -78,9 +79,12 @@ internal sealed class InstanceManager(
             MavenRepo = mavenRepo,
             HttpClient = http,
             Logger = logger
-        });
+        };
 
-        var isNew = record is null && dataMajor is null;
+        // the locale only matters to initdb, on the first start; set only when chosen, to keep the library's default
+        if (isNew && (locale ?? AvailableLocale()) is { } chosen) options = options with { Locale = chosen };
+        var server = new PgServer(options);
+
         try
         {
             await server.StartAsync(ct).ConfigureAwait(false);
@@ -99,6 +103,36 @@ internal sealed class InstanceManager(
         registry.Save(saved);
 
         return new StartResult(server, server.IsAttached, saved);
+    }
+
+    /// <summary>
+    /// The port of a running instance from Postgres's own <c>postmaster.pid</c>, when its process is alive and is
+    /// Postgres; null otherwise (then <see cref="StatusAsync"/> gives the full answer). Reading the file directly
+    /// saves the library's general status check on every SQL command.
+    /// </summary>
+    public int? RunningPort(string name)
+    {
+        try
+        {
+            var file = Path.Combine(workspace.InstanceDir(name), "data", "postmaster.pid");
+            if (!File.Exists(file)) return null;
+
+            // line 1: the postmaster's process id; line 4: its port
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            var pidLine = reader.ReadLine();
+            reader.ReadLine();
+            reader.ReadLine();
+            var portLine = reader.ReadLine();
+            if (!int.TryParse(pidLine, out var pid) || !int.TryParse(portLine, out var port) || port <= 0) return null;
+
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return !process.HasExited && process.ProcessName.Contains("postgres", StringComparison.OrdinalIgnoreCase) ? port : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            return null; // no such process, or the file is being rewritten: ask the library
+        }
     }
 
     public async Task<PgInstanceStatus> StatusAsync(string name, CancellationToken ct)
@@ -183,12 +217,44 @@ internal sealed class InstanceManager(
     }
 
     public bool Exists(string name) => Workspace.IsValidName(name) && Directory.Exists(workspace.InstanceDir(name)) &&
-                                       (registry.Get(name) is not null || registry.DataMajor(name) is not null);
+                                       (registry.DataMajor(name) is not null || registry.Get(name) is not null); // the data first: a cheap read
 
     public string LogFile(string name) => Path.Combine(workspace.InstanceDir(name), "postgres.log");
 
     public static string ConnectionString(int port, string database = DefaultDatabase, string? schema = null) =>
         Connections.Format("npgsql", port, database, schema);
+
+    /// <summary>
+    /// A locale initdb can use. The library's default, en_US.UTF-8, is missing from many Linux images (the .NET SDK
+    /// images among them), where initdb then fails; there C.UTF-8, else C, is used instead. Null keeps the default.
+    /// </summary>
+    internal static string? AvailableLocale()
+    {
+        if (!OperatingSystem.IsLinux()) return null;
+        try
+        {
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("locale", "-a")
+            {
+                RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false
+            });
+            if (process is null) return null;
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit(5000);
+            return ChooseLocale(output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            return null; // no locale command (some minimal images): keep the default
+        }
+    }
+
+    /// <summary>From the names <c>locale -a</c> lists: null when en_US.UTF-8 exists, else C.UTF-8 when it exists, else C.</summary>
+    internal static string? ChooseLocale(IEnumerable<string> available)
+    {
+        var names = available.Select(n => n.ToLowerInvariant().Replace("-", "")).ToHashSet();
+        if (names.Count == 0 || names.Contains("en_us.utf8")) return null;
+        return names.Contains("c.utf8") ? "C.UTF-8" : "C";
+    }
 
     // A PgServer for inspecting or controlling an instance. The version only matters for finding binaries.
     private PgServer Server(string name) => new(new PgServerOptions

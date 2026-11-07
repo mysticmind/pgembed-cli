@@ -65,6 +65,7 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
+        StartupTrace.Mark("sql command");
         if (settings.Json) settings.Format = "json"; // --json is shorthand for --format json here
         var cli = new CliContext(settings, services);
         // a terminal gets a table that fits it; files and pipes get one row per line
@@ -105,6 +106,7 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
 
         if (MetaCommands.IsCommand(sql)) return await RunMetaAsync(cli, target, output, sql, ct);
 
+        StartupTrace.Mark("target resolved");
         var statements = SqlRunner.Split(sql);
         if (!SqlConfirmation.Ask(cli, SqlSafety.Changes(statements), settings.Yes))
         {
@@ -113,11 +115,14 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         }
 
         await using var connection = new NpgsqlConnection(target.ConnectionString);
+        StartupTrace.Mark("checked");
         await connection.OpenAsync(ct);
+        StartupTrace.Mark("connected");
 
         var runner = new SqlRunner(cli, output, new SqlSession());
         var ok = await runner.RunAsync(connection, statements, ct);
         runner.Complete();
+        StartupTrace.Mark("done");
         return ok ? 0 : 1;
     }
 
@@ -139,13 +144,17 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         else
         {
             if (!cli.Instances.Exists(target)) throw new PostgresEmbedException($"There is no instance named '{target}'.");
-            var status = await cli.Instances.StatusAsync(target, ct);
-            if (status.State == PgInstanceState.Stopped || status.Port is null)
+            var port = cli.Instances.RunningPort(target);
+            if (port is null)
             {
-                throw new PostgresEmbedException($"'{target}' is not running. Start it with: pgembed start {target}");
+                var status = await cli.Instances.StatusAsync(target, ct);
+                port = status.State == PgInstanceState.Stopped ? null : status.Port;
             }
 
-            builder = new NpgsqlConnectionStringBuilder(InstanceManager.ConnectionString(status.Port.Value));
+            if (port is null) throw new PostgresEmbedException($"'{target}' is not running. Start it with: pgembed start {target}");
+            builder = new NpgsqlConnectionStringBuilder(InstanceManager.ConnectionString(port.Value));
+            // instances trust local connections: no Kerberos probe (on Alpine it prints a missing-library error)
+            builder.GssEncryptionMode = GssEncryptionMode.Disable;
             label = target;
         }
 

@@ -38,5 +38,13 @@ jobs:
         with:
           user: mysticmind # nuget.org profile name of the package owner, not an email address
 
-      - name: Push
-        run: dotnet nuget push "artifacts/*.nupkg" -s https://api.nuget.org/v3/index.json -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate
+      # One package per platform plus a portable one, and a top-level package pointing at them. The top-level
+      # package goes last: until every platform package is on nuget.org, installs of it would fail.
+      - name: Push the platform packages
+        run: |
+          for package in artifacts/pgembed.[a-z]*.nupkg; do
+            dotnet nuget push "$package" -s https://api.nuget.org/v3/index.json -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate
+          done
+
+      - name: Push the top-level package
+        run: dotnet nuget push artifacts/pgembed.[0-9]*.nupkg -s https://api.nuget.org/v3/index.json -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate

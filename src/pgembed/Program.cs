@@ -13,6 +13,7 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        StartupTrace.Mark("main");
         // Ctrl+C and SIGTERM cancel the running command (for start --foreground: stop the server cleanly)
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>
@@ -37,6 +38,7 @@ public static class Program
 
         var app = new CommandApp(registrar);
         app.Configure(config => Configure(config, services));
+        StartupTrace.Mark("configured");
         try
         {
             return await app.RunAsync(args, cts.Token);
@@ -44,6 +46,7 @@ public static class Program
         finally
         {
             await stdout.FlushAsync(CancellationToken.None);
+            StartupTrace.Mark("exit");
         }
     }
 

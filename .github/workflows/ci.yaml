@@ -13,7 +13,7 @@ env:
 
 jobs:
   test:
-    # The tool targets net8.0 and rolls forward; the tests run it on each supported runtime.
+    # The tool targets net10.0 and rolls forward; the tests run it on each supported runtime.
     name: ${{ matrix.name }} (${{ matrix.framework }})
     strategy:
       fail-fast: false
@@ -21,8 +21,6 @@ jobs:
         include:
           - { name: Linux x64, os: ubuntu-latest, framework: net11.0 }
           - { name: Linux x64, os: ubuntu-latest, framework: net10.0 }
-          - { name: Linux x64, os: ubuntu-latest, framework: net9.0 }
-          - { name: Linux x64, os: ubuntu-latest, framework: net8.0 }
           - { name: Linux arm64, os: ubuntu-24.04-arm, framework: net10.0 }
           - { name: macOS arm64, os: macos-latest, framework: net10.0 }
           - { name: macOS x64, os: macos-15-intel, framework: net10.0 }
@@ -36,10 +34,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
       - name: Run tests
         run: dotnet test --project tests/pgembed.Tests/pgembed.Tests.csproj --framework ${{ matrix.framework }}
