@@ -92,6 +92,7 @@ internal static class Renderers
 internal abstract class TextRenderer(IAnsiConsole console, TextWriter output) : IResultSink
 {
     protected TextWriter Output { get; } = output;
+    protected IAnsiConsole Console { get; } = console;
 
     public abstract void Begin(string statement, string? title, IReadOnlyList<SqlColumn> columns);
     public abstract void Row(object?[] values);
@@ -100,7 +101,7 @@ internal abstract class TextRenderer(IAnsiConsole console, TextWriter output) : 
     public void Fail(StatementError error)
     {
         Output.Flush();
-        Renderers.ReportError(console, error);
+        Renderers.ReportError(Console, error);
     }
 }
 
@@ -158,9 +159,10 @@ internal sealed class MarkdownRenderer(IAnsiConsole console, TextWriter output) 
 
 /// <summary>
 /// psql-style text, never wrapped. Column widths come from the first rows (a window), as psql does; when
-/// a result is longer, the rest streams with those widths, so memory stays bounded.
+/// a result is longer, the rest streams with those widths, so memory stays bounded. In a terminal, a result
+/// taller than the screen opens in the pager.
 /// </summary>
-internal sealed class AlignedRenderer(IAnsiConsole console, TextWriter output, SqlOutput options) : TextRenderer(console, output)
+internal sealed class AlignedRenderer(IAnsiConsole terminal, TextWriter output, SqlOutput options) : TextRenderer(terminal, output)
 {
     public const int Window = 1000;
 
@@ -168,10 +170,15 @@ internal sealed class AlignedRenderer(IAnsiConsole console, TextWriter output, S
     private readonly List<object?[]> _pending = [];
     private bool[]? _numeric;
     private int[]? _widths;
+    private string? _title;
+    private Pager? _pager;
+    private bool _pagerClosed;
+
+    private TextWriter Target => _pager?.Writer ?? Output;
 
     public override void Begin(string statement, string? title, IReadOnlyList<SqlColumn> columns)
     {
-        if (title is not null) Output.WriteLine(title);
+        _title = title;
         _columns = columns;
         _pending.Clear();
         _widths = null;
@@ -182,7 +189,7 @@ internal sealed class AlignedRenderer(IAnsiConsole console, TextWriter output, S
     {
         if (_widths is not null)
         {
-            Aligned.WriteRow(Output, values, _widths, _numeric!, Values.Text);
+            Write(w => Aligned.WriteRow(w, values, _widths, _numeric!, Values.Text));
             return;
         }
 
@@ -200,28 +207,72 @@ internal sealed class AlignedRenderer(IAnsiConsole console, TextWriter output, S
             return;
         }
 
-        if (options.Expanded) Aligned.Write(Output, _columns.Select(c => c.Name).ToList(), _pending, true, Values.Text);
+        if (options.Expanded)
+        {
+            OpenPager(_pending.Count * (_columns.Count + 1) + 2);
+            Write(w =>
+            {
+                if (_title is not null) w.WriteLine(_title);
+                Aligned.Write(w, _columns.Select(c => c.Name).ToList(), _pending, true, Values.Text);
+            });
+        }
         else if (_widths is null) Flush();
 
-        Output.WriteLine($"({Values.RowCount(summary.Rows)}{(summary.Truncated ? ", more not read" : "")}{timing})");
-        Output.WriteLine();
+        Write(w =>
+        {
+            w.WriteLine($"({Values.RowCount(summary.Rows)}{timing})");
+            w.WriteLine();
+        });
         Output.Flush();
         _pending.Clear();
+        ClosePager();
     }
 
     private void Flush()
     {
+        // a full window means the result is at least that tall
+        OpenPager(_pending.Count + 4);
         var names = _columns.Select(c => c.Name).ToList();
         (_widths, _numeric) = Aligned.Measure(names, _pending, Values.Text);
-        Aligned.WriteHeader(Output, names, _widths);
-        foreach (var row in _pending) Aligned.WriteRow(Output, row, _widths, _numeric, Values.Text);
+        Write(w =>
+        {
+            if (_title is not null) w.WriteLine(_title);
+            Aligned.WriteHeader(w, names, _widths);
+            foreach (var row in _pending) Aligned.WriteRow(w, row, _widths, _numeric, Values.Text);
+        });
         _pending.Clear();
+    }
+
+    private void OpenPager(int lines)
+    {
+        if (_pager is null && options.Paging(lines) is { } command) _pager = Pager.Start(command, Console);
+        _pagerClosed = false;
+    }
+
+    private void ClosePager()
+    {
+        _pager?.Dispose();
+        _pager = null;
+    }
+
+    // once the user leaves the pager, the rest of the result is dropped
+    private void Write(Action<TextWriter> write)
+    {
+        if (_pagerClosed) return;
+        try
+        {
+            write(Target);
+        }
+        catch (IOException) when (_pager is not null)
+        {
+            _pagerClosed = true;
+        }
     }
 }
 
 /// <summary>
 /// The Spectre table that fits the terminal. It holds at most <see cref="SqlOutput.MaxRows"/> rows, since the
-/// executor stops reading there.
+/// executor stops reading there. A result taller than the screen opens in the pager.
 /// </summary>
 internal sealed class TableRenderer(IAnsiConsole console, SqlOutput options) : IResultSink
 {
@@ -247,31 +298,50 @@ internal sealed class TableRenderer(IAnsiConsole console, SqlOutput options) : I
             return;
         }
 
-        if (_title is not null) console.MarkupLineInterpolated($"[bold]{_title}[/]");
-        if (options.Expanded) WriteExpanded();
-        else
+        using var pager = options.Paging(EstimatedLines()) is { } command ? Pager.Start(command, console) : null;
+        try
         {
-            var table = new Table().Border(TableBorder.Simple);
-            foreach (var column in _columns) table.AddColumn(Markup.Escape(column.Name));
-            foreach (var row in _rows) table.AddRow(row.Select(v => v is null ? "[dim]NULL[/]" : Markup.Escape(Values.Text(v))).ToArray());
-            console.Write(table);
+            Render(pager?.Console ?? console, summary, timing);
+        }
+        catch (IOException) when (pager is not null)
+        {
+            // the user left the pager before the end
         }
 
-        var count = summary.Truncated
-            ? $"first {Values.RowCount(summary.Rows)}; more not shown: use --max-rows, or --format csv or json for all"
-            : Values.RowCount(summary.Rows);
-        console.MarkupLineInterpolated($"[dim]({count}{timing})[/]");
         _rows.Clear();
     }
 
     public void Fail(StatementError error) => Renderers.ReportError(console, error);
 
+    private void Render(IAnsiConsole target, StatementSummary summary, string timing)
+    {
+        if (_title is not null) target.MarkupLineInterpolated($"[bold]{_title}[/]");
+        if (options.Expanded) WriteExpanded(target);
+        else
+        {
+            var table = new Table().Border(TableBorder.Simple);
+            foreach (var column in _columns) table.AddColumn(Markup.Escape(column.Name));
+            foreach (var row in _rows) table.AddRow(row.Select(v => v is null ? "[dim]NULL[/]" : Markup.Escape(Values.Text(v))).ToArray());
+            target.Write(table);
+        }
+
+        var count = summary.Truncated
+            ? $"first {Values.RowCount(summary.Rows)}; more not shown: use --max-rows, or --format csv or json for all"
+            : Values.RowCount(summary.Rows);
+        target.MarkupLineInterpolated($"[dim]({count}{timing})[/]");
+    }
+
+    // header, rule, padding and footer; a row with line breaks takes several lines
+    private int EstimatedLines() => options.Expanded
+        ? _rows.Count * (_columns.Count + 1) + 1
+        : _rows.Sum(r => r.Max(v => v is string text ? text.AsSpan().Count('\n') + 1 : 1)) + 6;
+
     // one block per row, like psql's \x; json values indented
-    private void WriteExpanded()
+    private void WriteExpanded(IAnsiConsole target)
     {
         for (var r = 0; r < _rows.Count; r++)
         {
-            console.MarkupLineInterpolated($"[dim]-[[ RECORD {r + 1} ]]-[/]");
+            target.MarkupLineInterpolated($"[dim]-[[ RECORD {r + 1} ]]-[/]");
             var grid = new Grid().AddColumn(new GridColumn().NoWrap().PadRight(2)).AddColumn();
             for (var c = 0; c < _columns.Count; c++)
             {
@@ -284,7 +354,7 @@ internal sealed class TableRenderer(IAnsiConsole console, SqlOutput options) : I
                 });
             }
 
-            console.Write(grid);
+            target.Write(grid);
         }
     }
 }

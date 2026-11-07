@@ -179,6 +179,15 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
                 cli.Console.MarkupLineInterpolated($"Output format is {argument}.");
                 break;
 
+            case "\\pager":
+                var on = argument switch { "on" => true, "off" => false, _ => output.PagerCommand is null };
+                output.PagerCommand = on ? Pager.Command() : null;
+                if (on && output.ScreenHeight == 0) output.ScreenHeight = Pager.ScreenHeight();
+                if (on && output.PagerCommand is null) cli.Console.MarkupLineInterpolated($"[yellow]No pager to use:[/] set {Pager.Variable} or PAGER.");
+                else if (on) cli.Console.MarkupLineInterpolated($"Pager is on ({output.PagerCommand}).");
+                else cli.Console.MarkupLine("Pager is off.");
+                break;
+
             case "\\i" when argument is not null:
                 await RunSqlAsync(await File.ReadAllTextAsync(argument, ct), ct);
                 break;
@@ -204,6 +213,7 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
         Row("\\x [on|off]", "Expanded display: one block per row");
         Row("\\timing [on|off]", "Show how long statements take");
         Row("\\format <format>", "table, aligned (psql-style), json, csv or markdown");
+        Row("\\pager [on|off]", "Open results taller than the screen in a pager (PGEMBED_PAGER, PAGER or less)");
         Row("\\i <file>", "Run a SQL file");
         Row("\\q", "Quit (also: exit, quit)");
         cli.Console.Write(grid);

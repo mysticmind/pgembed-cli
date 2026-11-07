@@ -50,6 +50,10 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         [Description("Only check the syntax, with the PostgreSQL parser; needs no server")]
         public bool Check { get; set; }
 
+        [CommandOption("--no-pager")]
+        [Description("Never open a pager (default: a result taller than the terminal opens in PGEMBED_PAGER, PAGER or less -SFX)")]
+        public bool NoPager { get; set; }
+
         [CommandOption("-y|--yes")]
         [Description("Run statements that change the schema or existing rows without asking")]
         public bool Yes { get; set; }
@@ -66,6 +70,12 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         // a terminal gets a table that fits it; files and pipes get one row per line
         var format = settings.Format ?? (services.OutputRedirected ? "aligned" : "table");
         var output = new SqlOutput { Format = format, MaxRows = settings.MaxRows, Timing = settings.Timing };
+        // a pager only for a person at a terminal
+        if (!settings.NoPager && !services.OutputRedirected && cli.Console.Profile.Capabilities.Interactive)
+        {
+            output.PagerCommand = Pager.Command();
+            output.ScreenHeight = Pager.ScreenHeight();
+        }
         var sql = await ReadSqlAsync(settings, ct);
 
         if (settings.Check)

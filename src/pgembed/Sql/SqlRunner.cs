@@ -19,6 +19,15 @@ internal sealed class SqlOutput
 
     /// <summary>JSON per statement as it completes (interactive) instead of one document at the end.</summary>
     public bool StreamJson { get; set; }
+
+    /// <summary>The pager for results taller than the screen; null when output is not a terminal or paging is off.</summary>
+    public string? PagerCommand { get; set; }
+
+    /// <summary>Lines the terminal shows; a result taller than this opens in the pager.</summary>
+    public int ScreenHeight { get; set; }
+
+    /// <summary>The pager command when a result of this many lines should be paged; otherwise null.</summary>
+    public string? Paging(int lines) => PagerCommand is not null && ScreenHeight > 0 && lines > ScreenHeight ? PagerCommand : null;
 }
 
 /// <summary>

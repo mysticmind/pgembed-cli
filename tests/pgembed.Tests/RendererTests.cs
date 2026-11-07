@@ -119,6 +119,73 @@ public class RendererTests
     }
 }
 
+public class PagerTests
+{
+    private static (TestConsole Console, StringWriter Out, IResultSink Sink, string File) Paged(string format, int screen)
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"pgembed-pager-{Guid.NewGuid():N}.txt");
+        var console = new TestConsole().Width(120);
+        var output = new StringWriter();
+        var options = new SqlOutput { Format = format, PagerCommand = $"cat > '{file}'", ScreenHeight = screen };
+        return (console, output, Renderers.For(console, output, options), file);
+    }
+
+    private static void Feed(IResultSink sink, int rows)
+    {
+        sink.Begin("SELECT ...", null, [new SqlColumn("n", "integer")]);
+        for (var i = 1; i <= rows; i++) sink.Row([i]);
+        sink.End(new StatementSummary("SELECT ...", rows, null, false, 1));
+    }
+
+    [Theory]
+    [InlineData("table")]
+    [InlineData("aligned")]
+    public void A_result_taller_than_the_screen_goes_to_the_pager(string format)
+    {
+        var (console, output, sink, file) = Paged(format, screen: 10);
+        try
+        {
+            Feed(sink, 50);
+            var paged = File.ReadAllText(file);
+            Assert.Contains("50", paged);
+            Assert.Contains("(50 rows)", paged);
+            Assert.DoesNotContain("50", console.Output + output);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Theory]
+    [InlineData("table")]
+    [InlineData("aligned")]
+    public void A_short_result_stays_on_the_terminal(string format)
+    {
+        var (console, output, sink, file) = Paged(format, screen: 40);
+        Feed(sink, 3);
+        Assert.False(File.Exists(file));
+        Assert.Contains("(3 rows)", console.Output + output);
+    }
+
+    [Fact]
+    public void An_empty_pager_variable_turns_paging_off()
+    {
+        var saved = Environment.GetEnvironmentVariable(Pager.Variable);
+        try
+        {
+            Environment.SetEnvironmentVariable(Pager.Variable, " ");
+            Assert.Null(Pager.Command());
+            Environment.SetEnvironmentVariable(Pager.Variable, "more");
+            Assert.Equal("more", Pager.Command());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(Pager.Variable, saved);
+        }
+    }
+}
+
 public class SqlSessionTests
 {
     [Theory]
