@@ -233,6 +233,48 @@ public class McpTests : IAsyncLifetime
         Assert.True(still.IsError != true, Text(still));
     }
 
+    // From the security review: SQL the parser and the server would read differently must not smuggle a statement
+    [Fact]
+    public async Task A_string_mode_change_cannot_smuggle_a_program_past_the_checks()
+    {
+        var client = await ConnectAsync(new McpPolicy(false, false, false));
+        Assert.True((await Call(client, "start_instance", new() { ["name"] = _name, ["version"] = "17", ["port"] = 0 })).IsError != true);
+
+        var marker = Path.Combine(Path.GetTempPath(), $"pgembed-smuggled-{Guid.NewGuid():N}");
+        var payload = $"SELECT 'a\\' || ' ; COPY (SELECT 1) TO PROGRAM $$touch {marker}$$; --'";
+
+        var normal = await Call(client, "run_sql", new() { ["target"] = _name, ["sql"] = "SET standard_conforming_strings = off; " + payload });
+        var readOnly = await Call(client, "run_sql", new()
+        {
+            ["target"] = _name, ["read_only"] = true,
+            ["sql"] = "SET standard_conforming_strings = off; " + payload.Replace(" ; COPY", " ; COMMIT; COPY")
+        });
+
+        // the program never ran, either way
+        Assert.False(File.Exists(marker), $"smuggled COPY TO PROGRAM ran; normal: {Text(normal)} read-only: {Text(readOnly)}");
+        Assert.True(normal.IsError);
+        Assert.True(readOnly.IsError);
+
+        // even with the setting changed by a separate, confirmed call, a smuggled statement does not run
+        var confirmedSet = await Call(client, "run_sql", new() { ["target"] = _name, ["sql"] = "SET standard_conforming_strings = off", ["confirm"] = true });
+        Assert.True(confirmedSet.IsError); // refused outright in MCP
+        Assert.False(File.Exists(marker));
+    }
+
+    [Fact]
+    public async Task A_unicode_escaped_function_name_still_asks_first()
+    {
+        var client = await ConnectAsync(new McpPolicy(false, false, false));
+        Assert.True((await Call(client, "start_instance", new() { ["name"] = _name, ["version"] = "17", ["port"] = 0 })).IsError != true);
+
+        foreach (var sql in new[] { "SELECT U&\"pg_read_file\"('postgresql.conf')", "SELECT U&\"pg_read_fil\\0065\"('postgresql.conf')" })
+        {
+            var result = await Call(client, "run_sql", new() { ["target"] = _name, ["sql"] = sql });
+            Assert.True(result.IsError, sql);
+            Assert.Contains("confirm: true", Text(result));
+        }
+    }
+
     [Fact]
     public async Task A_read_only_server_refuses_every_write()
     {

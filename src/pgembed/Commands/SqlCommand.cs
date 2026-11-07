@@ -177,6 +177,10 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         builder.Pooling = false;
         // no timeout from the command line (Npgsql's default is 30 seconds): a long migration runs; Ctrl+C cancels
         builder.CommandTimeout = 0;
+        // the server reads strings the way pgembed's checks do: a startup option, which a database or role default
+        // cannot override (with standard_conforming_strings off, \' would close a string the checks see as open)
+        builder.Options = string.Join(' ', new[] { builder.Options, "-c standard_conforming_strings=on -c backslash_quote=safe_encoding" }
+            .Where(o => !string.IsNullOrWhiteSpace(o)));
         return (builder, label);
     }
 

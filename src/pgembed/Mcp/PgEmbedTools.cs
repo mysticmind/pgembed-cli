@@ -255,6 +255,11 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         else
         {
             var changes = SqlSafety.Changes(statements);
+            if (changes.FirstOrDefault(c => c.What == SqlSafety.ChangesHowSqlIsRead) is { } mode)
+            {
+                return Error($"Refused: {Abbreviate(mode.Statement)} {mode.What}. Nothing was run.");
+            }
+
             if (changes.Count > 0 && await RefusalAsync(server, "Run SQL that changes the database?",
                     changes.Select(c => $"{Abbreviate(c.Statement)}: {c.What}").ToList(), confirm, ct) is { } refusal)
             {

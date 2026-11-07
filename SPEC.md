@@ -89,6 +89,7 @@ untrusted. What holds (each with tests):
 | SQL reaching outside the database | asks first (CLI, prompt, MCP); read-only refuses: DO, CALL, EXECUTE, LOAD, COPY PROGRAM, COPY to or from a file, and built-in functions that touch files, other servers, the server, or run SQL text (`SqlSafety.ServerAccess`) |
 | Read-only mode | the check above, plus transaction control, `RESET ALL`, `set_config`; a read-only transaction; on PostgreSQL 14+ as a superuser, `SET LOCAL ROLE pg_read_all_data`, which holds even through user functions |
 | `explain_query` | one statement the parser reads; otherwise a `COMMIT` inside it could end the rolled-back transaction |
+| Reading SQL the way the server does | every connection pins `standard_conforming_strings=on` as a startup option; changing it (or `backslash_quote`) in SQL is refused by MCP and read-only mode and asks first in the CLI; and each command reaches the server as exactly one statement, so where the readings could still differ, a smuggled statement is refused by the server (found by an independent review: `SET standard_conforming_strings = off` let a `COPY ... TO PROGRAM` hide inside what the checks read as a string) |
 | Passwords | masked in every error and MCP result (`Connections.Mask`); MCP named connections (`--connection`) keep connection strings out of the conversation |
 | Other local users | the Unix socket is 0700; `start --password` for shared machines (SCRAM over TCP, a generated password in 0600 settings); trust stays the default so library tests attach without one |
 | Files | instance settings and prompt history 0600, folders 0700; archive extraction keeps every entry and link inside the install |
@@ -252,7 +253,7 @@ Names accept wildcards where several instances make sense: `pgembed stop ci-*`.
 - **classify statements**: `sql` and the prompt confirm schema changes and changes to existing rows before they run (calling out `UPDATE`/`DELETE` without `WHERE`), and MCP's read-only mode refuses them before they reach the server (on top of the read-only transaction);
 - **(proposed, 0.2)** **format SQL** in `format` and `format_sql` (`Parser.Format`), and **summarize statements** in `sql --check` and `check_sql` (`Parser.Summary`: tables, functions, filter columns, statement types).
 
-The server stays the authority: when the parser rejects SQL the server might accept (for example syntax newer than the parser's PostgreSQL 18 grammar), pgembed still sends it, as one batch; since it cannot classify it, it asks first (or needs `--yes`).
+The server stays the authority: when the parser rejects SQL the server might accept (for example syntax newer than the parser's PostgreSQL 18 grammar), pgembed still sends it; since it cannot classify it, it asks first (or needs `--yes`). Each command reaches the server as exactly one statement (Npgsql's SQL rewriting is off), so SQL the parser cannot read must be a single statement; a script of several needs splitting. This is what keeps a statement from hiding where pgembed's reading and the server's differ.
 
 ## pgembed 0.2
 

@@ -82,4 +82,13 @@
   <ItemGroup Condition="'$(PgEmbedLibraryProject)' != ''">
     <ProjectReference Include="$(PgEmbedLibraryProject)" />
   </ItemGroup>
+
+  <!-- Security: Npgsql sends each command as one statement, unparsed. With SQL rewriting on, Npgsql would split a
+       command at semicolons with its own reading of the SQL; if that reading differed from the server's or from
+       pgembed's checks (string modes, say), a statement could be smuggled past them. Raw, the server refuses a
+       command that holds more than one statement. -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="Npgsql.EnableSqlRewriting" Value="false" Trim="true" />
+  </ItemGroup>
+
 </Project>

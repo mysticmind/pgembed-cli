@@ -36,6 +36,12 @@ So does anything that reaches outside the database or cannot be checked:
 
 Functions you define are not looked into: a superuser can do anything through them.
 
+pgembed and the server must read SQL the same way, or a statement could hide where they differ. So every
+connection pins how strings are read (`standard_conforming_strings`), changing it in SQL is refused by the MCP
+server and read-only mode (and asks first in `sql`), and each command reaches the server as exactly one statement:
+anything that would split differently is refused by the server rather than run. A multi-statement script that
+pgembed's parser cannot read therefore has to be split into single statements.
+
 ## AI assistants (MCP)
 
 An assistant can be steered by text it reads: a query result, a document, a web page. pgembed assumes it might

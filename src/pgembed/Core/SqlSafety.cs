@@ -35,6 +35,11 @@ internal static class SqlSafety
                 if (Describe(info) is { } change) changes.Add(change with { Statement = statement });
             }
 
+            if (Classified(statement).Any(info => ChangesStringMode(info.Node)))
+            {
+                changes.Add(new SqlChange(statement, ChangesHowSqlIsRead, false));
+            }
+
             foreach (var function in FunctionsIn(statement))
             {
                 if (ServerAccess.TryGetValue(function, out var what)) changes.Add(new SqlChange(statement, $"{what} ({function})", false));
@@ -42,6 +47,29 @@ internal static class SqlSafety
         }
 
         return changes;
+    }
+
+    /// <summary>
+    /// Changing how strings are read (standard_conforming_strings, backslash_quote) would make the server read later
+    /// SQL differently from pgembed's checks, so a statement could hide inside what the checks see as a string.
+    /// The MCP server and read-only mode refuse it; the command line asks.
+    /// </summary>
+    public const string ChangesHowSqlIsRead = "changes how SQL strings are read, so pgembed's checks could no longer be trusted";
+
+    private static IEnumerable<StatementInfo> Classified(string statement) =>
+        Parser.Classify(statement) is { IsSuccess: true } classified ? classified.Value : [];
+
+    private static bool ChangesStringMode(IMessage? node)
+    {
+        var set = node switch
+        {
+            VariableSetStmt direct => direct,
+            Node { VariableSetStmt: { } wrapped } => wrapped,
+            _ => null
+        };
+
+        return set?.Name is { } name && (name.Equals("standard_conforming_strings", StringComparison.OrdinalIgnoreCase)
+                                         || name.Equals("backslash_quote", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -95,6 +123,9 @@ internal static class SqlSafety
     /// </summary>
     internal static bool IsPlainRead(string statement)
     {
+        // Unicode escapes (U&"pg_read_fil\0065") can spell any name: only the full parse reads them
+        if (statement.Contains("U&", StringComparison.OrdinalIgnoreCase) || statement.Contains("UESCAPE", StringComparison.OrdinalIgnoreCase)) return false;
+
         var scanned = Parser.Scan(statement);
         if (!scanned.IsSuccess || scanned.Value.Tokens.Count == 0) return false;
 
