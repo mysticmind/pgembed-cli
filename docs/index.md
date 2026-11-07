@@ -24,10 +24,14 @@ features:
     details: Postgres 9.6 to 18 from the official binaries, on Windows, macOS and Linux (glibc and musl, x64 and arm64). Several versions at once, each a named instance that keeps its port.
     link: /guide/instances
     linkText: Instances
+  - title: Minimal, small downloads
+    details: Just the server, initdb and pg_ctl, nothing else. About 14 MB on Linux and 24 MB on Windows, against 112 to 154 MB for the official Docker image. Downloaded once into a shared cache, checksum-verified.
+    link: /guide/versions-and-cache#minimal-binaries
+    linkText: What you get
   - title: No Docker, no install
-    details: Works on laptops and CI runners that cannot run Docker. Binaries download once into a shared cache, checksum-verified.
-    link: /guide/versions-and-cache
-    linkText: Versions and cache
+    details: Works on laptops and CI runners that cannot run Docker or install packages. Nothing to set up beyond the .NET SDK.
+    link: /guide/introduction
+    linkText: Why pgembed
   - title: SQL you can read
     details: Tables that fit the terminal, psql-style text for pipes, JSON with nested json values, CSV and Markdown. Errors point at the position, with the server's hint.
     link: /guide/sql

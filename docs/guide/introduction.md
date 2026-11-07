@@ -5,6 +5,10 @@ downloads the official binaries for your platform (the [zonky embedded-postgres-
 verified against the SHA-256 Maven publishes), keeps named instances of any version running in the
 background, and lets you query and inspect them.
 
+The binaries are minimal: just the server, `initdb` and `pg_ctl`. A version is about a 14 MB download on
+Linux and 24 MB on Windows (30 to 70 MB on macOS), against 112 to 154 MB for the official Docker image,
+and it downloads once into a cache shared by every instance of that version.
+
 It is a .NET tool, built on the [MysticMind.PostgresEmbed](https://github.com/mysticmind/mysticmind-postgresembed)
 library, and is also an MCP server for AI assistants.
 

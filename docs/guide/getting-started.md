@@ -22,8 +22,9 @@ snippet: sample_first_instance
   Host=localhost;Port=5432;Username=postgres;Database=postgres
 ```
 
-The first start of a version downloads it (about 30 MB) with a progress bar; later starts take about a
-second, and starting an instance that already runs attaches to it instantly.
+The first start of a version downloads it (about 14 MB on Linux, 24 MB on Windows, 30 to 70 MB on macOS)
+with a progress bar; later starts take about a second, and starting an instance that already runs
+attaches to it instantly.
 
 ## Next
 
