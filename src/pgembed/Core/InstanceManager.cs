@@ -309,12 +309,22 @@ internal sealed class InstanceManager(
     });
 
     // "<url>" or "<url>#sha256=<hex>"
+    // An extension is native code Postgres loads, so where it comes from matters: https, this machine, or a
+    // checksum that proves it. Over plain http, without #sha256=, anyone on the way could replace it.
     internal static PgExtensionConfig ParseExtension(string value)
     {
         var hash = value.IndexOf("#sha256=", StringComparison.OrdinalIgnoreCase);
+        var url = hash < 0 ? value : value[..hash];
+        if (hash < 0 && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == "http" && !uri.IsLoopback)
+        {
+            throw new PostgresEmbedException(
+                $"The extension {url} would be downloaded over plain http, where it could be replaced on the way. " +
+                "Use https, or add its checksum: --extension <url>#sha256=<hex>.");
+        }
+
         return hash < 0
-            ? new PgExtensionConfig(value)
-            : new PgExtensionConfig(value[..hash]) { Sha256 = value[(hash + "#sha256=".Length)..] };
+            ? new PgExtensionConfig(url)
+            : new PgExtensionConfig(url) { Sha256 = value[(hash + "#sha256=".Length)..] };
     }
 
     internal static bool IsPortFree(int port)

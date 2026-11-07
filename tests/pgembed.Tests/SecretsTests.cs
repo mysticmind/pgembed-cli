@@ -203,3 +203,16 @@ public class DownloadAndTimeoutTests
         Assert.Equal(0, builder.CommandTimeout);
     }
 }
+
+public class ExtensionSourceTests
+{
+    [Theory]
+    [InlineData("https://example.com/postgis.zip")]
+    [InlineData("http://localhost:8000/postgis.zip")]
+    [InlineData("http://example.com/postgis.zip#sha256=ab12")]
+    public void Accepts_extensions_that_can_be_trusted(string value) => InstanceManager.ParseExtension(value);
+
+    [Fact]
+    public void Refuses_an_unverified_extension_over_plain_http() =>
+        Assert.Throws<MysticMind.PostgresEmbed.PostgresEmbedException>(() => InstanceManager.ParseExtension("http://example.com/postgis.zip"));
+}
