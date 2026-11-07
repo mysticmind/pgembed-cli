@@ -44,22 +44,28 @@ internal sealed class SqlSession
 
     public void Observe(string statement)
     {
-        var classified = Parser.Classify(statement);
-        if (!classified.IsSuccess) return;
+        // the tokenizer is enough, and avoids the full parse on every statement
+        var scanned = Parser.Scan(statement);
+        if (!scanned.IsSuccess || scanned.Value.Tokens.Count == 0) return;
 
-        foreach (var info in classified.Value)
+        var tokens = scanned.Value.Tokens.Select(t => t.Token).ToList();
+        Token? Next(int i) => i < tokens.Count ? tokens[i] : null;
+        var chain = tokens.Contains(Token.Chain) && !tokens.Contains(Token.No); // COMMIT AND CHAIN starts the next one
+
+        switch (tokens[0])
         {
-            if (info.Kind != StatementKind.Transaction || info.Node is not { } node) continue;
-            var kind = node is TransactionStmt direct ? direct.Kind : (node as Node)?.TransactionStmt?.Kind;
-            switch (kind)
-            {
-                case TransactionStmtKind.TransStmtBegin or TransactionStmtKind.TransStmtStart:
-                    InTransaction = true;
-                    break;
-                case TransactionStmtKind.TransStmtCommit or TransactionStmtKind.TransStmtRollback or TransactionStmtKind.TransStmtPrepare:
-                    InTransaction = false;
-                    break;
-            }
+            case Token.BeginP or Token.Start when !(tokens[0] == Token.Start && Next(1) != Token.Transaction):
+                InTransaction = true;
+                break;
+            case Token.Commit or Token.EndP or Token.AbortP:
+                InTransaction = chain;
+                break;
+            case Token.Rollback when Next(1) != Token.To && !(Next(1) == Token.Transaction && Next(2) == Token.To) && !(Next(1) == Token.Work && Next(2) == Token.To):
+                InTransaction = chain;
+                break;
+            case Token.Prepare when Next(1) == Token.Transaction:
+                InTransaction = false;
+                break;
         }
     }
 

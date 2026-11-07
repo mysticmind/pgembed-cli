@@ -19,6 +19,7 @@ internal static class SqlSafety
         var changes = new List<SqlChange>();
         foreach (var statement in statements)
         {
+            if (IsPlainRead(statement)) continue;
             var classified = Parser.Classify(statement);
             if (!classified.IsSuccess)
             {
@@ -33,6 +34,40 @@ internal static class SqlSafety
         }
 
         return changes;
+    }
+
+    // keywords that can start a statement which changes nothing (INSERT adds rows but does not ask)
+    private static readonly HashSet<Token> ReadStarts = [Token.Select, Token.With, Token.Values, Token.Table, Token.Show, Token.Explain, Token.Insert];
+
+    // any of these anywhere sends the statement to the full classification
+    private static readonly HashSet<Token> Risky =
+    [
+        Token.Into, Token.Update, Token.DeleteP, Token.Merge, Token.Truncate, Token.Copy, Token.Program, Token.Create, Token.Alter,
+        Token.Drop, Token.Analyze, Token.Grant, Token.Revoke, Token.Comment, Token.Security, Token.Refresh, Token.LockP
+    ];
+
+    /// <summary>
+    /// A fast, conservative check with the tokenizer only: true when the statement starts like a read (or INSERT)
+    /// and has no keyword that could make it change anything. Then the full parse, whose first use costs about
+    /// 90 ms, is not needed. Anything else goes to the full classification.
+    /// </summary>
+    internal static bool IsPlainRead(string statement)
+    {
+        var scanned = Parser.Scan(statement);
+        if (!scanned.IsSuccess || scanned.Value.Tokens.Count == 0) return false;
+
+        var tokens = scanned.Value.Tokens;
+        var first = tokens[0].Token;
+        if (!ReadStarts.Contains(first)) return false;
+
+        for (var i = 1; i < tokens.Count; i++)
+        {
+            var token = tokens[i].Token;
+            if (token == Token.Into && first == Token.Insert && i == 1) continue; // INSERT INTO
+            if (Risky.Contains(token)) return false;
+        }
+
+        return true;
     }
 
     /// <summary>

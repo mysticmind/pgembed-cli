@@ -165,3 +165,40 @@ public class ReadOnlyTests
 
     private static IReadOnlyList<string> Split(string sql) => PgEmbed.Cli.Sql.SqlRunner.Split(sql);
 }
+
+public class FastPathTests
+{
+    public static TheoryData<string> Statements =>
+    [
+        "SELECT 1", "SELECT * FROM t WHERE id = 1", "SELECT \"update\", \"delete\" FROM t", "WITH x AS (SELECT 1) SELECT * FROM x",
+        "VALUES (1), (2)", "TABLE t", "SHOW search_path", "EXPLAIN SELECT * FROM t", "INSERT INTO t VALUES (1)",
+        "INSERT INTO t SELECT * FROM s", "SELECT * FROM t FOR UPDATE", "SELECT * INTO copy FROM t",
+        "WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d", "EXPLAIN ANALYZE DELETE FROM t", "EXPLAIN DELETE FROM t",
+        "INSERT INTO t VALUES (1) ON CONFLICT (id) DO UPDATE SET a = 1", "UPDATE t SET a = 1", "DELETE FROM t",
+        "TRUNCATE t", "CREATE TABLE x(a int)", "COPY t TO PROGRAM 'cat'", "SELECT 'drop table' AS text", "MERGE INTO t USING s ON true WHEN MATCHED THEN DELETE"
+    ];
+
+    [Theory]
+    [MemberData(nameof(Statements))]
+    public void Never_skips_a_statement_the_full_classification_would_ask_about(string statement)
+    {
+        if (SqlSafety.IsPlainRead(statement)) Assert.Empty(SqlSafety.Changes([statement]));
+    }
+
+    [Theory]
+    [InlineData("SELECT 1")]
+    [InlineData("SELECT \"update\" FROM t")]
+    [InlineData("INSERT INTO t VALUES (1)")]
+    [InlineData("WITH x AS (SELECT 1) SELECT * FROM x")]
+    [InlineData("SELECT 'drop table' AS text")]
+    public void Takes_the_fast_path_for_plain_reads(string statement) => Assert.True(SqlSafety.IsPlainRead(statement));
+
+    [Theory]
+    [InlineData("SELECT * INTO copy FROM t")]
+    [InlineData("WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d")]
+    [InlineData("EXPLAIN ANALYZE DELETE FROM t")]
+    [InlineData("INSERT INTO t VALUES (1) ON CONFLICT (id) DO UPDATE SET a = 1")]
+    [InlineData("UPDATE t SET a = 1")]
+    public void Sends_anything_that_might_change_data_to_the_full_classification(string statement) =>
+        Assert.False(SqlSafety.IsPlainRead(statement));
+}

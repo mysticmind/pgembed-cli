@@ -196,6 +196,11 @@ public class SqlSessionTests
     [InlineData("BEGIN; ROLLBACK", false)]
     [InlineData("BEGIN; SAVEPOINT a; ROLLBACK TO a", true)]
     [InlineData("SELECT 1", false)]
+    [InlineData("BEGIN; COMMIT AND CHAIN", true)]
+    [InlineData("BEGIN; ROLLBACK TO SAVEPOINT a", true)]
+    [InlineData("BEGIN; END", false)]
+    [InlineData("START TRANSACTION; ABORT", false)]
+    [InlineData("BEGIN; PREPARE TRANSACTION 'x'", false)]
     public void Tracks_whether_a_transaction_is_open(string script, bool open)
     {
         var session = new SqlSession();
