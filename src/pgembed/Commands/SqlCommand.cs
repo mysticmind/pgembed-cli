@@ -175,6 +175,8 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         if (database is not null) builder.Database = database;
         if (schema is not null) builder.SearchPath = schema;
         builder.Pooling = false;
+        // no timeout from the command line (Npgsql's default is 30 seconds): a long migration runs; Ctrl+C cancels
+        builder.CommandTimeout = 0;
         return (builder, label);
     }
 

@@ -176,3 +176,30 @@ public class PasswordInstanceTests : IAsyncLifetime
         }
     }
 }
+
+public class DownloadAndTimeoutTests
+{
+    [Theory]
+    [InlineData("https://repo1.maven.org/maven2")]
+    [InlineData("http://localhost:8081/maven2")]
+    [InlineData("http://127.0.0.1/repo")]
+    [InlineData("file:///srv/maven")]
+    public void Accepts_https_and_local_repositories(string repo) =>
+        Assert.Equal(repo, Infrastructure.CliContext.RequireSecureRepo(repo));
+
+    [Theory]
+    [InlineData("http://mirror.example.com/maven2")]
+    [InlineData("ftp://mirror.example.com/maven2")]
+    [InlineData("not a url")]
+    public void Refuses_a_repository_whose_downloads_could_be_replaced(string repo) =>
+        Assert.Throws<MysticMind.PostgresEmbed.PostgresEmbedException>(() => Infrastructure.CliContext.RequireSecureRepo(repo));
+
+    [Fact]
+    public async Task Sql_from_the_command_line_has_no_statement_timeout()
+    {
+        var cli = new Infrastructure.CliContext(new Infrastructure.GlobalSettings(),
+            new Infrastructure.CliServices(new Spectre.Console.Testing.TestConsole(), TextWriter.Null, TextWriter.Null, new HttpClient()));
+        var (builder, _) = await Commands.SqlCommand.ResolveTargetAsync(cli, "postgresql://me@db.example.com/shop", null, null, TestContext.Current.CancellationToken);
+        Assert.Equal(0, builder.CommandTimeout);
+    }
+}

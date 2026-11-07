@@ -31,6 +31,10 @@ internal sealed class McpCommand(CliServices services) : AsyncCommand<McpCommand
         [Description("Allow writes to servers pgembed did not start (named connections and connection strings); read-only otherwise")]
         public bool AllowExternalWrites { get; set; }
 
+        [CommandOption("--statement-timeout <SECONDS>")]
+        [Description("Seconds a statement may run before it is cancelled (default 120; 0 for none)")]
+        public int StatementTimeout { get; set; } = 120;
+
         [CommandOption("--connection <NAME=CONNECTION_STRING>")]
         [Description("A server the assistant can use by name without seeing its connection string or password, for example --connection prod=postgresql://me@db/shop. Repeatable")]
         public string[] Connections { get; set; } = [];
@@ -61,7 +65,8 @@ internal sealed class McpCommand(CliServices services) : AsyncCommand<McpCommand
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
         await using var tools = new PgEmbedTools(Quiet(settings, services.Error, services.Http), new McpPolicy(settings.ReadOnly, settings.NoConfirm, settings.AllowExternalWrites,
-            settings.Connections.ToDictionary(c => c[..c.IndexOf('=')], c => c[(c.IndexOf('=') + 1)..], StringComparer.Ordinal)));
+            settings.Connections.ToDictionary(c => c[..c.IndexOf('=')], c => c[(c.IndexOf('=') + 1)..], StringComparer.Ordinal),
+            Math.Max(0, settings.StatementTimeout)));
         var options = CreateOptions(tools);
         await using var server = McpServer.Create(new StdioServerTransport(options), options);
         await server.RunAsync(ct);

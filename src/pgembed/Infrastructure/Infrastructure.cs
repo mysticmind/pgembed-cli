@@ -42,14 +42,34 @@ internal sealed class CliContext
         Settings = settings;
         Services = services;
         Workspace = Workspace.Current;
-        MavenRepo = settings.MavenRepo
+        MavenRepo = RequireSecureRepo(settings.MavenRepo
                     ?? Environment.GetEnvironmentVariable("PGEMBED_MAVEN_REPO")
-                    ?? PgServerOptions.DefaultMavenRepo;
+                    ?? PgServerOptions.DefaultMavenRepo);
         Logger = settings.Verbose ? new StderrLogger(services.Error) : NullLogger.Instance;
         Platform = PgPlatform.Detect();
         Catalog = new VersionCatalog(Workspace, services.Http, MavenRepo);
         Registry = new InstanceRegistry(Workspace);
         Instances = new InstanceManager(Workspace, Registry, Catalog, Platform, services.Http, MavenRepo, Logger);
+    }
+
+    /// <summary>
+    /// Downloads are checked against the SHA-256 the repository publishes, which proves nothing when both come over
+    /// plain http: whoever can change one can change the other. So a repository is https, or on this machine
+    /// (http://localhost, file://), unless PGEMBED_ALLOW_HTTP_REPO=1 says an http mirror on a trusted network is fine.
+    /// </summary>
+    internal static string RequireSecureRepo(string repo)
+    {
+        if (!Uri.TryCreate(repo, UriKind.Absolute, out var uri))
+        {
+            throw new PostgresEmbedException($"The Maven repository '{Connections.Mask(repo)}' is not a URL.");
+        }
+
+        if (uri.Scheme is "https" or "file" || uri.IsLoopback) return repo;
+        if (uri.Scheme == "http" && Environment.GetEnvironmentVariable("PGEMBED_ALLOW_HTTP_REPO") == "1") return repo;
+
+        throw new PostgresEmbedException(
+            $"The Maven repository {uri.Scheme}://{uri.Host} is not https: a download and its checksum could both be replaced in " +
+            "transit. Use an https mirror, or set PGEMBED_ALLOW_HTTP_REPO=1 for an http mirror on a network you trust.");
     }
 
     public GlobalSettings Settings { get; }

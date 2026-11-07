@@ -14,7 +14,8 @@ using PgEmbed.Cli.Sql;
 namespace PgEmbed.Cli.Mcp;
 
 /// <summary>How the MCP server guards the databases it reaches.</summary>
-internal sealed record McpPolicy(bool ReadOnly, bool NoConfirm, bool AllowExternalWrites, IReadOnlyDictionary<string, string>? Connections = null)
+internal sealed record McpPolicy(
+    bool ReadOnly, bool NoConfirm, bool AllowExternalWrites, IReadOnlyDictionary<string, string>? Connections = null, int StatementTimeout = 120)
 {
     /// <summary>Servers the assistant uses by name, from --connection: their connection strings never reach it.</summary>
     public IReadOnlyDictionary<string, string> Named { get; } = Connections ?? new Dictionary<string, string>();
@@ -430,6 +431,8 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         }
 
         builder.Pooling = true;
+        // a runaway query does not hang the assistant: each statement gets StatementTimeout seconds
+        builder.CommandTimeout = policy.StatementTimeout;
         builder.ApplicationName ??= "pgembed-mcp";
         var key = builder.ConnectionString;
 
