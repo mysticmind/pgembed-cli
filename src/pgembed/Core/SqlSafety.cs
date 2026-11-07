@@ -35,6 +35,62 @@ internal static class SqlSafety
         return changes;
     }
 
+    /// <summary>
+    /// Why a script cannot run in read-only mode; empty when it can. Writes of any kind (INSERT too) are refused,
+    /// and so is transaction control, since <c>COMMIT; DELETE ...</c> would end the read-only transaction and run
+    /// the delete; so are settings that change it. A statement the parser cannot read is refused too.
+    /// </summary>
+    public static IReadOnlyList<SqlChange> ReadOnlyViolations(IEnumerable<string> statements)
+    {
+        var violations = new List<SqlChange>();
+        foreach (var statement in statements)
+        {
+            var classified = Parser.Classify(statement);
+            if (!classified.IsSuccess)
+            {
+                violations.Add(new SqlChange(statement, "could not be checked (the parser does not recognize it)", false));
+                continue;
+            }
+
+            foreach (var info in classified.Value)
+            {
+                var reason = info.Kind switch
+                {
+                    StatementKind.Transaction => "controls the transaction",
+                    _ when SetsTransactionMode(info.Node) => "changes the transaction or session mode",
+                    StatementKind.Session => null, // SET search_path and the like last only for this call
+                    _ when !info.IsReadOnly => Describe(info)?.What ?? $"writes ({info.Kind.ToString().ToLowerInvariant()})",
+                    _ => null
+                };
+
+                if (reason is not null)
+                {
+                    violations.Add(new SqlChange(statement, reason, false));
+                    break;
+                }
+            }
+        }
+
+        return violations;
+    }
+
+    // SET TRANSACTION, SET SESSION CHARACTERISTICS, SET default_transaction_read_only and the like, and roles
+    private static bool SetsTransactionMode(IMessage? node)
+    {
+        var set = node switch
+        {
+            VariableSetStmt direct => direct,
+            Node { VariableSetStmt: { } wrapped } => wrapped,
+            _ => null
+        };
+
+        if (set is null) return false;
+        var name = set.Name ?? "";
+        return name.Contains("transaction", StringComparison.OrdinalIgnoreCase)
+               || name.Contains("session", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("role", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static SqlChange? Describe(StatementInfo info)
     {
         switch (info.Kind)

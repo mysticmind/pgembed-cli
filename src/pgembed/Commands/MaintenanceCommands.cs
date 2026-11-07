@@ -22,26 +22,14 @@ internal sealed class DoctorCommand(CliServices services) : AsyncCommand<DoctorC
         public int Port { get; set; } = 5432;
     }
 
-    private enum Outcome { Ok, Warning, Failed }
+    internal enum Outcome { Ok, Warning, Failed }
 
-    private sealed record Check(string Name, Outcome Outcome, string Detail);
+    internal sealed record Check(string Name, Outcome Outcome, string Detail);
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
         var cli = new CliContext(settings, services);
-        var checks = new List<Check>
-        {
-            new("Platform", Outcome.Ok, $"{cli.Platform.RuntimeIdentifier} (binaries: {cli.Platform.ArtifactName})"),
-            !OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess
-                ? new Check("User", Outcome.Failed, "running as root: Postgres refuses to run as root; use a regular account")
-                : new Check("User", Outcome.Ok, $"{Environment.UserName}, not root"),
-            await MavenAsync(cli, ct),
-            CacheFolder(cli),
-            PostgresCanUse(settings.Dir ?? cli.Workspace.CacheDir),
-            InstanceManager.IsPortFree(settings.Port)
-                ? new Check($"Port {settings.Port}", Outcome.Ok, "free")
-                : new Check($"Port {settings.Port}", Outcome.Warning, "in use; pgembed start picks another port, or pass --port")
-        };
+        var checks = await RunChecksAsync(cli, settings.Dir, settings.Port, ct);
 
         if (settings.Json)
         {
@@ -61,6 +49,21 @@ internal sealed class DoctorCommand(CliServices services) : AsyncCommand<DoctorC
 
         return checks.Any(c => c.Outcome == Outcome.Failed) ? 1 : 0;
     }
+
+    /// <summary>Every check, for the command and the MCP doctor tool.</summary>
+    internal static async Task<List<Check>> RunChecksAsync(CliContext cli, string? dir, int port, CancellationToken ct) =>
+    [
+        new("Platform", Outcome.Ok, $"{cli.Platform.RuntimeIdentifier} (binaries: {cli.Platform.ArtifactName})"),
+        !OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess
+            ? new Check("User", Outcome.Failed, "running as root: Postgres refuses to run as root; use a regular account")
+            : new Check("User", Outcome.Ok, $"{Environment.UserName}, not root"),
+        await MavenAsync(cli, ct),
+        CacheFolder(cli),
+        PostgresCanUse(dir ?? cli.Workspace.CacheDir),
+        InstanceManager.IsPortFree(port)
+            ? new Check($"Port {port}", Outcome.Ok, "free")
+            : new Check($"Port {port}", Outcome.Warning, "in use; pgembed start picks another port, or pass --port")
+    ];
 
     private static async Task<Check> MavenAsync(CliContext cli, CancellationToken ct)
     {

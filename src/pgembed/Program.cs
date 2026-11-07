@@ -90,6 +90,9 @@ public static class Program
         config.AddCommand<SchemaCommand>("schema").WithDescription("List tables, or describe one: columns, keys, indexes, constraints")
             .WithExample("schema", "app").WithExample("schema", "app", "books").WithExample("schema", "app", "orders", "--schema", "sales", "--json");
 
+        config.AddCommand<McpCommand>("mcp").WithDescription("Run an MCP server over standard input and output, for AI assistants")
+            .WithExample("mcp").WithExample("mcp", "--read-only");
+
         config.AddCommand<DoctorCommand>("doctor").WithDescription("Check that Postgres can run here");
         config.AddBranch<GlobalSettings>("cache", cache =>
         {

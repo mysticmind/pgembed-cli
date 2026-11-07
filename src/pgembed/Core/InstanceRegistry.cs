@@ -23,6 +23,7 @@ internal sealed class InstanceRegistry(Workspace workspace)
 
     public InstanceRecord? Get(string name)
     {
+        if (!Workspace.IsValidName(name)) return null;
         var file = Path.Combine(workspace.InstanceDir(name), FileName);
         try
         {
@@ -58,6 +59,7 @@ internal sealed class InstanceRegistry(Workspace workspace)
     /// <summary>The Postgres major an instance's data was created with, or null before its first start.</summary>
     public string? DataMajor(string name)
     {
+        if (!Workspace.IsValidName(name)) return null;
         var file = Path.Combine(workspace.InstanceDir(name), "data", "PG_VERSION");
         return File.Exists(file) ? File.ReadAllText(file).Trim() : null;
     }

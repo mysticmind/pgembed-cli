@@ -359,7 +359,7 @@ internal sealed class LogsCommand(CliServices services) : AsyncCommand<LogsComma
         return 0;
     }
 
-    private static List<string> ReadShared(string file)
+    internal static List<string> ReadShared(string file)
     {
         using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(stream);

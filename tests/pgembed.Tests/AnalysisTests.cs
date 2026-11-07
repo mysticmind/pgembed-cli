@@ -132,3 +132,36 @@ public class FormatAndCheckCommandTests : IDisposable
         Assert.Contains("syntax error", run.Console);
     }
 }
+
+public class ReadOnlyTests
+{
+    [Theory]
+    [InlineData("SELECT * FROM t")]
+    [InlineData("SELECT 1; SHOW search_path")]
+    [InlineData("SET search_path = sales; SELECT 1")]
+    [InlineData("EXPLAIN DELETE FROM t")]
+    [InlineData("WITH x AS (SELECT 1) SELECT * FROM x")]
+    public void Allows_reads(string sql) => Assert.Empty(SqlSafety.ReadOnlyViolations(Split(sql)));
+
+    [Theory]
+    [InlineData("INSERT INTO t VALUES (1)", "")]
+    [InlineData("UPDATE t SET a = 1 WHERE b = 2", "updates rows")]
+    [InlineData("COMMIT; DELETE FROM t", "controls the transaction")]
+    [InlineData("BEGIN", "controls the transaction")]
+    [InlineData("SET TRANSACTION READ WRITE", "transaction or session mode")]
+    [InlineData("SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE", "transaction or session mode")]
+    [InlineData("SET default_transaction_read_only = off", "transaction or session mode")]
+    [InlineData("SELECT * INTO copy FROM t", "")]
+    [InlineData("WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d", "")]
+    [InlineData("EXPLAIN ANALYZE DELETE FROM t", "")]
+    [InlineData("CREATE TABLE x(a int)", "schema")]
+    [InlineData("COPY t TO PROGRAM 'cat'", "")]
+    public void Refuses_writes_and_transaction_control(string sql, string reason)
+    {
+        var violations = SqlSafety.ReadOnlyViolations(Split(sql));
+        Assert.NotEmpty(violations);
+        Assert.Contains(reason, violations[0].What);
+    }
+
+    private static IReadOnlyList<string> Split(string sql) => PgEmbed.Cli.Sql.SqlRunner.Split(sql);
+}

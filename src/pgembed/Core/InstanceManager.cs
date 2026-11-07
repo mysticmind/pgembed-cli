@@ -182,7 +182,7 @@ internal sealed class InstanceManager(
         }
     }
 
-    public bool Exists(string name) => Directory.Exists(workspace.InstanceDir(name)) &&
+    public bool Exists(string name) => Workspace.IsValidName(name) && Directory.Exists(workspace.InstanceDir(name)) &&
                                        (registry.Get(name) is not null || registry.DataMajor(name) is not null);
 
     public string LogFile(string name) => Path.Combine(workspace.InstanceDir(name), "postgres.log");
