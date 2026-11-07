@@ -176,3 +176,32 @@ public class McpTests : IAsyncLifetime
         Assert.True(read.IsError != true, Text(read));
     }
 }
+
+/// <summary>The MCP Registry listing in the package stays in step with the package.</summary>
+public class McpListingTests
+{
+    private static string RepoFile(params string[] parts)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "pgembed.slnx"))) dir = dir.Parent;
+        return Path.Combine([dir!.FullName, .. parts]);
+    }
+
+    [Fact]
+    public void Server_json_matches_the_package_version_and_the_registry_limits()
+    {
+        using var json = JsonDocument.Parse(File.ReadAllText(RepoFile("src", "pgembed", ".mcp", "server.json")));
+        var root = json.RootElement;
+        var version = typeof(McpCommand).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion.Split('+')[0];
+
+        Assert.Equal(version, root.GetProperty("version").GetString());
+        Assert.Equal(version, root.GetProperty("packages")[0].GetProperty("version").GetString());
+        Assert.InRange(root.GetProperty("description").GetString()!.Length, 1, 100);
+
+        // the registry checks that the package README names the server
+        var name = root.GetProperty("name").GetString();
+        Assert.Contains($"<!-- mcp-name: {name} -->", File.ReadAllText(RepoFile("README.md")));
+    }
+}

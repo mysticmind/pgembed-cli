@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.mysticmind/pgembed -->
 <img src="https://raw.githubusercontent.com/mysticmind/pgembed-cli/main/assets/icon.png" alt="pgembed icon: an elephant standing on a terminal" width="96">
 
 # pgembed [![NuGet](https://badgen.net/nuget/v/pgembed)](https://www.nuget.org/packages/pgembed/)
