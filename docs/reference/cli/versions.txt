@@ -1,23 +1,23 @@
-DESCRIPTION:
-List the Postgres versions published for this platform
+Description:
+  List the Postgres versions published for this platform
 
-USAGE:
-    pgembed versions [OPTIONS]
-
-EXAMPLES:
+  Examples:
     pgembed versions
     pgembed versions --major 17
 
-OPTIONS:
-    -h, --help                Prints help information
-        --cache-dir <PATH>    Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR,
-                              else the per-user cache folder)
-        --maven-repo <URL>    Maven repository or mirror with the Postgres binaries (default: Maven
-                              Central, or PGEMBED_MAVEN_REPO)
-        --json                Machine-readable output
-        --verbose             Log details to standard error
-        --major <MAJOR>       Every published version of one major, for example 17
-        --all                 Every published version
-        --platform <RID>      Another platform: win-x64, linux-x64, linux-arm64, linux-musl-x64,
-                              linux-musl-arm64, osx-x64, osx-arm64
-        --refresh             Check for new versions now instead of using the cached list
+Usage:
+  pgembed versions [options]
+
+Options:
+  --major <MAJOR>     Every published version of one major, for example 17
+  --all               Every published version
+  --platform <RID>    Another platform: win-x64, linux-x64, linux-arm64, linux-musl-x64,
+                      linux-musl-arm64, osx-x64, osx-arm64
+  --refresh           Check for new versions now instead of using the cached list
+  --cache-dir <PATH>  Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR, else the
+                      per-user cache folder)
+  --maven-repo <URL>  Maven repository or mirror with the Postgres binaries (default: Maven Central,
+                      or PGEMBED_MAVEN_REPO)
+  --json              Machine-readable output
+  --verbose           Log details to standard error
+  -h, --help          Show help and usage information

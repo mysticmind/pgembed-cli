@@ -1,32 +1,28 @@
-USAGE:
-    pgembed [OPTIONS] <COMMAND>
+Description:
+  Run PostgreSQL locally: named instances of any version, SQL, schema, and an MCP server.
 
-EXAMPLES:
-    pgembed versions
-    pgembed versions --major 17
-    pgembed install 17
-    pgembed extensions 17
-    pgembed start app --version 17
+Usage:
+  pgembed [command] [options]
 
-OPTIONS:
-    -h, --help       Prints help information
-    -v, --version    Prints version information
+Options:
+  -h, --help  Show help and usage information
+  --version   Show version information
 
-COMMANDS:
-    versions                List the Postgres versions published for this platform
-    install <VERSION>       Download and extract a Postgres version into the cache
-    extensions <VERSION>    List the extensions CREATE EXTENSION can use in a version
-    start <NAME>            Start a named instance in the background (created on first start)
-    stop                    Stop instances cleanly
-    kill                    Force-kill instances (last resort)
-    restart <NAME>          Stop and start an instance with its saved settings
-    status                  Show instances: version, port, process, state, uptime, data size
-    connstr <NAME>          Print an instance's connection string
-    logs <NAME>             Show an instance's server log
-    rm                      Delete instances and their data
-    sql                     Run SQL against an instance and show the results
-    format                  Format SQL, keeping comments; needs no server
-    schema <TARGET>         List tables, or describe one: columns, keys, indexes, constraints
-    mcp                     Run an MCP server over standard input and output, for AI assistants
-    doctor                  Check that Postgres can run here
-    cache                   Inspect and clean the download cache
+Commands:
+  versions                   List the Postgres versions published for this platform
+  install <version>          Download and extract a Postgres version into the cache
+  extensions <version>       List the extensions CREATE EXTENSION can use in a version
+  start <name>               Start a named instance in the background (created on first start)
+  stop [<names>]             Stop instances cleanly
+  kill [<names>]             Force-kill instances (last resort)
+  restart <name>             Stop and start an instance with its saved settings
+  status [<names>] (list)    Show instances: version, port, process, state, uptime, data size
+  connstr <name>             Print an instance's connection string
+  logs <name>                Show an instance's server log
+  rm [<names>]               Delete instances and their data
+  sql [<target>] [<sql>]     Run SQL against an instance and show the results
+  format [<sql>]             Format SQL, keeping comments; needs no server
+  schema <target> [<table>]  List tables, or describe one: columns, keys, indexes, constraints
+  mcp                        Run an MCP server over standard input and output, for AI assistants
+  doctor                     Check that Postgres can run here
+  cache                      Inspect and clean the download cache

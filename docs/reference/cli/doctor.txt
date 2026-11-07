@@ -1,16 +1,16 @@
-DESCRIPTION:
-Check that Postgres can run here
+Description:
+  Check that Postgres can run here
 
-USAGE:
-    pgembed doctor [OPTIONS]
+Usage:
+  pgembed doctor [options]
 
-OPTIONS:
-    -h, --help                Prints help information
-        --cache-dir <PATH>    Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR,
-                              else the per-user cache folder)
-        --maven-repo <URL>    Maven repository or mirror with the Postgres binaries (default: Maven
-                              Central, or PGEMBED_MAVEN_REPO)
-        --json                Machine-readable output
-        --verbose             Log details to standard error
-        --dir <PATH>          Check that Postgres can use this folder (default: the cache folder)
-        --port <PORT>         Check that this port is free (default: 5432)
+Options:
+  --dir <PATH>        Check that Postgres can use this folder (default: the cache folder)
+  --port <PORT>       Check that this port is free (default: 5432)
+  --cache-dir <PATH>  Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR, else the
+                      per-user cache folder)
+  --maven-repo <URL>  Maven repository or mirror with the Postgres binaries (default: Maven Central,
+                      or PGEMBED_MAVEN_REPO)
+  --json              Machine-readable output
+  --verbose           Log details to standard error
+  -h, --help          Show help and usage information

@@ -4,7 +4,6 @@ using PgEmbed.Cli.Commands;
 using PgEmbed.Cli.Sql;
 using PgEmbed.Cli.Core;
 using PgEmbed.Cli.Infrastructure;
-using Spectre.Console.Cli.Testing;
 
 namespace PgEmbed.Cli.Tests;
 
@@ -202,13 +201,6 @@ public class ExtensionArgumentTests
         Assert.Equal("https://example.com/vector.zip", pinned.DownloadUrl);
         Assert.Equal("abc123", pinned.Sha256);
     }
-}
-
-public class TypeRegistrarTests
-{
-    [Fact]
-    public void Meets_the_spectre_container_contract() =>
-        new TypeRegistrarBaseTests(() => new TypeRegistrar()).RunAllTests();
 }
 
 internal sealed class FakeMaven(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

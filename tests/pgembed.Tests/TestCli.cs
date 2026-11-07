@@ -1,7 +1,6 @@
 using System.Runtime.CompilerServices;
 using MysticMind.PostgresEmbed;
 using PgEmbed.Cli.Infrastructure;
-using Spectre.Console.Cli.Testing;
 using Spectre.Console.Testing;
 
 namespace PgEmbed.Cli.Tests;
@@ -47,12 +46,9 @@ internal static class TestCli
         using var http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
         var services = new CliServices(console, output, error, http, redirected);
 
-        var registrar = new TypeRegistrar();
-        Program.Register(registrar, services);
-        var app = new CommandAppTester(registrar, console: console);
-        app.Configure(config => Program.Configure(config, services));
-
-        var result = await app.RunAsync(args, TestContext.Current.CancellationToken);
-        return new CliRun(result.ExitCode, result.Output, output.ToString(), error.ToString());
+        var app = Program.Build(services);
+        app.HelpWidth = width;
+        var exitCode = await app.RunAsync(args, TestContext.Current.CancellationToken);
+        return new CliRun(exitCode, console.Output, output.ToString(), error.ToString());
     }
 }

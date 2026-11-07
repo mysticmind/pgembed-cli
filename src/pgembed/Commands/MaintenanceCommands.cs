@@ -5,7 +5,6 @@ using MysticMind.PostgresEmbed;
 using PgEmbed.Cli.Core;
 using PgEmbed.Cli.Infrastructure;
 using Spectre.Console;
-using Spectre.Console.Cli;
 
 namespace PgEmbed.Cli.Commands;
 

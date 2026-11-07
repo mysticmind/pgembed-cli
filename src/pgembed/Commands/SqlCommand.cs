@@ -6,7 +6,6 @@ using PgEmbed.Cli.Infrastructure;
 using PgEmbed.Cli.Sql;
 using PgSqlParser;
 using Spectre.Console;
-using Spectre.Console.Cli;
 
 namespace PgEmbed.Cli.Commands;
 

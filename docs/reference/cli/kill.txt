@@ -1,21 +1,21 @@
-DESCRIPTION:
-Force-kill instances (last resort)
+Description:
+  Force-kill instances (last resort)
 
-USAGE:
-    pgembed kill [NAMES] [OPTIONS]
-
-EXAMPLES:
+  Examples:
     pgembed kill app
 
-ARGUMENTS:
-    [NAMES]    Instance names; * and ? match several, for example ci-*
+Usage:
+  pgembed kill [<names>...] [options]
 
-OPTIONS:
-    -h, --help                Prints help information
-        --cache-dir <PATH>    Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR,
-                              else the per-user cache folder)
-        --maven-repo <URL>    Maven repository or mirror with the Postgres binaries (default: Maven
-                              Central, or PGEMBED_MAVEN_REPO)
-        --json                Machine-readable output
-        --verbose             Log details to standard error
-        --all                 Every instance
+Arguments:
+  <names>  Instance names; * and ? match several, for example ci-*
+
+Options:
+  --all               Every instance
+  --cache-dir <PATH>  Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR, else the
+                      per-user cache folder)
+  --maven-repo <URL>  Maven repository or mirror with the Postgres binaries (default: Maven Central,
+                      or PGEMBED_MAVEN_REPO)
+  --json              Machine-readable output
+  --verbose           Log details to standard error
+  -h, --help          Show help and usage information

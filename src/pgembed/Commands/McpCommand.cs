@@ -5,7 +5,6 @@ using ModelContextProtocol.Server;
 using PgEmbed.Cli.Infrastructure;
 using PgEmbed.Cli.Mcp;
 using Spectre.Console;
-using Spectre.Console.Cli;
 
 namespace PgEmbed.Cli.Commands;
 

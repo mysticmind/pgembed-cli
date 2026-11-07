@@ -27,7 +27,7 @@ public class DocsTests
     {
         var args = command.Split(' ', StringSplitOptions.RemoveEmptyEntries).Append("--help").ToArray();
         var run = await TestCli.RunWithWidthAsync(100, args);
-        var help = string.Join('\n', run.Console.ReplaceLineEndings("\n").Split('\n').Select(l => l.TrimEnd())).Trim() + "\n";
+        var help = string.Join('\n', run.Out.ReplaceLineEndings("\n").Split('\n').Select(l => l.TrimEnd())).Trim() + "\n";
 
         var name = command.Length == 0 ? "pgembed" : command.Replace(' ', '-');
         Check(Path.Combine("docs", "reference", "cli", name + ".txt"), help);

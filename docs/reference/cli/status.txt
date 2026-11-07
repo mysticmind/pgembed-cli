@@ -1,17 +1,17 @@
-DESCRIPTION:
-Show instances: version, port, process, state, uptime, data size
+Description:
+  Show instances: version, port, process, state, uptime, data size
 
-USAGE:
-    pgembed status [NAMES] [OPTIONS]
+Usage:
+  pgembed status [<names>...] [options]
 
-ARGUMENTS:
-    [NAMES]    Instance names or patterns (default: all)
+Arguments:
+  <names>  Instance names or patterns (default: all)
 
-OPTIONS:
-    -h, --help                Prints help information
-        --cache-dir <PATH>    Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR,
-                              else the per-user cache folder)
-        --maven-repo <URL>    Maven repository or mirror with the Postgres binaries (default: Maven
-                              Central, or PGEMBED_MAVEN_REPO)
-        --json                Machine-readable output
-        --verbose             Log details to standard error
+Options:
+  --cache-dir <PATH>  Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR, else the
+                      per-user cache folder)
+  --maven-repo <URL>  Maven repository or mirror with the Postgres binaries (default: Maven Central,
+                      or PGEMBED_MAVEN_REPO)
+  --json              Machine-readable output
+  --verbose           Log details to standard error
+  -h, --help          Show help and usage information
