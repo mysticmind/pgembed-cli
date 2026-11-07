@@ -35,6 +35,10 @@ internal sealed class McpCommand(CliServices services) : AsyncCommand<McpCommand
         [Description("Seconds a statement may run before it is cancelled (default 120; 0 for none)")]
         public int StatementTimeout { get; set; } = 120;
 
+        [CommandOption("--least-privilege")]
+        [Description("Connect to pgembed instances as a role that is not a superuser (PostgreSQL 14+): it reads, writes and creates, but cannot reach files, programs or libraries, even through functions; it cannot alter tables the superuser owns")]
+        public bool LeastPrivilege { get; set; }
+
         [CommandOption("--connection <NAME=CONNECTION_STRING>")]
         [Description("A server the assistant can use by name without seeing its connection string or password, for example --connection prod=postgresql://me@db/shop. Repeatable")]
         public string[] Connections { get; set; } = [];
@@ -66,7 +70,11 @@ internal sealed class McpCommand(CliServices services) : AsyncCommand<McpCommand
     {
         await using var tools = new PgEmbedTools(Quiet(settings, services.Error, services.Http), new McpPolicy(settings.ReadOnly, settings.NoConfirm, settings.AllowExternalWrites,
             settings.Connections.ToDictionary(c => c[..c.IndexOf('=')], c => c[(c.IndexOf('=') + 1)..], StringComparer.Ordinal),
-            Math.Max(0, settings.StatementTimeout)));
+            Math.Max(0, settings.StatementTimeout), settings.LeastPrivilege));
+
+        // protections turned off on request: said once on standard error, and to the assistant in the instructions
+        foreach (var relaxed in tools.Policy.Relaxations()) await services.Error.WriteLineAsync($"pgembed mcp: warning: {relaxed}");
+
         var options = CreateOptions(tools);
         await using var server = McpServer.Create(new StdioServerTransport(options), options);
         await server.RunAsync(ct);
@@ -86,7 +94,7 @@ internal sealed class McpCommand(CliServices services) : AsyncCommand<McpCommand
         var options = new McpServerOptions
         {
             ServerInfo = new Implementation { Name = "pgembed", Version = version },
-            ServerInstructions = Instructions,
+            ServerInstructions = Instructions + string.Concat(tools.Policy.Relaxations().Select(r => $" This server runs with {r}.")),
             ToolCollection = []
         };
 

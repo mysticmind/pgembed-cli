@@ -64,11 +64,43 @@ internal sealed class SqlRunner
     /// The server stays the authority: a script the parser rejects is sent as one batch.</summary>
     public static IReadOnlyList<string> Split(string sql)
     {
+        // the parser first; for SQL it cannot read (syntax newer than its grammar), the scanner, which knows strings,
+        // comments and dollar quotes but not the grammar, so each statement still reaches the server on its own
         var split = Parser.SplitWithParser(sql);
-        if (!split.IsSuccess) return [sql];
+        if (split.IsSuccess)
+        {
+            var statements = split.Value.Statements.Select(s => s.Text.Trim()).Where(s => s.Length > 0).ToList();
+            return statements.Count > 0 ? statements : [sql];
+        }
 
-        var statements = split.Value.Statements.Select(s => s.Text.Trim()).Where(s => s.Length > 0).ToList();
-        return statements.Count > 0 ? statements : [sql];
+        var scanned = Parser.SplitWithScanner(sql);
+        return scanned.IsSuccess ? CutAt(sql, scanned.Value.Statements) : [sql];
+    }
+
+    // The scanner leaves out statements that start with a word it does not know, so its list is used only for where
+    // statements start and end: every character of the script lands in some part. Text between two of its statements
+    // is kept as one part; if that holds two statements, the server refuses it (one statement per command), so
+    // nothing runs unseen.
+    private static List<string> CutAt(string sql, IEnumerable<SplitStmt> statements)
+    {
+        var parts = new List<string>();
+        var position = 0;
+        foreach (var statement in statements.OrderBy(s => s.Location))
+        {
+            if (statement.Location < position || statement.Location + statement.Length > sql.Length) return [sql];
+            Add(sql[position..statement.Location]);
+            Add(sql.Substring(statement.Location, statement.Length));
+            position = statement.Location + statement.Length;
+        }
+
+        Add(sql[position..]);
+        return parts.Count > 0 ? parts : [sql];
+
+        void Add(string text)
+        {
+            text = text.Trim().Trim(';').Trim();
+            if (text.Length > 0) parts.Add(text);
+        }
     }
 
     /// <summary>False when a statement failed; the error has been shown and later statements were not run.</summary>

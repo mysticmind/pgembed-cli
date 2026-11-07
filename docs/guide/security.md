@@ -19,7 +19,8 @@ pgembed connstr app            # the connection string, with the password, for y
 ```
 
 The password is generated, kept in the instance's settings (readable only by you), and used by pgembed's own
-commands and its MCP server. Tests that attach through MysticMind.PostgresEmbed connect without a password, so
+commands and its MCP server. To make it the rule on a machine, set `PGEMBED_REQUIRE_PASSWORD=1`: every instance
+started then gets one, including those an assistant starts through MCP. Tests that attach through MysticMind.PostgresEmbed connect without a password, so
 they need the connection string from `pgembed connstr` on such an instance.
 
 ## SQL that reaches outside the database
@@ -34,13 +35,13 @@ So does anything that reaches outside the database or cannot be checked:
 - other servers and the server itself: `dblink`, `pg_terminate_backend`, `pg_reload_conf` and the like
 - SQL given as text: `query_to_xml`, `ts_stat`
 
-Functions you define are not looked into: a superuser can do anything through them.
+Functions you define are not looked into: a superuser can do anything through them. For an assistant, close
+that gap with [`--least-privilege`](#ai-assistants-mcp).
 
 pgembed and the server must read SQL the same way, or a statement could hide where they differ. So every
 connection pins how strings are read (`standard_conforming_strings`), changing it in SQL is refused by the MCP
 server and read-only mode (and asks first in `sql`), and each command reaches the server as exactly one statement:
-anything that would split differently is refused by the server rather than run. A multi-statement script that
-pgembed's parser cannot read therefore has to be split into single statements.
+anything that would split differently is refused by the server rather than run.
 
 ## AI assistants (MCP)
 
@@ -54,7 +55,13 @@ be, and holds these lines whatever it asks:
   above before anything runs, runs the SQL in a read-only transaction and, on PostgreSQL 14 and later, as the
   built-in `pg_read_all_data` role: it reads every table, but cannot touch files, programs or libraries, even
   through a function the check cannot see into.
+- **Least privilege, when you ask for it.** With `pgembed mcp --least-privilege` (PostgreSQL 14 and later), the
+  assistant connects to instances as `pgembed_assistant`, a role that is not a superuser. It reads and writes every
+  table and creates its own, but the server refuses it files, programs and libraries, also through a function
+  nobody checked. The cost: it cannot alter or drop tables the superuser owns.
 - **Servers pgembed did not start are read-only** unless you pass `--allow-external-writes`.
+- **Relaxed protections are announced.** With `--no-confirm` or `--allow-external-writes`, the server says so on
+  standard error at startup and tells the assistant in its instructions.
 - **Passwords stay out of the conversation.** Give other servers as [named connections](./mcp#other-servers-and-passwords);
   password-protected instances' passwords are masked in what tools return; errors never repeat a password.
 - **Runaway queries stop**: each statement gets 120 seconds (`--statement-timeout`).

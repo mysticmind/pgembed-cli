@@ -104,7 +104,9 @@ internal sealed class InstanceManager(
             throw;
         }
 
-        // once set, a password stays: the instance's pg_hba.conf asks for it
+        // once set, a password stays: the instance's pg_hba.conf asks for it. PGEMBED_REQUIRE_PASSWORD=1 asks for one
+        // on every new start (for shared machines and CI), wherever it comes from, the MCP server included.
+        requirePassword |= Environment.GetEnvironmentVariable("PGEMBED_REQUIRE_PASSWORD") == "1";
         var password = record?.Password;
         if (requirePassword && password is null) password = await RequirePasswordAsync(name, server.PgPort, ct).ConfigureAwait(false);
 

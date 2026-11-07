@@ -50,6 +50,12 @@ shortened, so results stay small for the assistant.
   (`read_only: true`), to the whole server (`--read-only`), and always to servers pgembed did not start
   (connection-string targets), unless you pass `--allow-external-writes`. Functions that act outside the
   transaction, such as `pg_terminate_backend`, are not stopped by it; use a restricted role for that.
+- **Least privilege** (`--least-privilege`, PostgreSQL 14 and later): the assistant works on instances as
+  `pgembed_assistant`, a role that reads, writes and creates tables but is refused files, programs and
+  libraries by the server itself, even through functions pgembed cannot see into. It cannot alter tables the
+  superuser owns, so create the schema yourself (or let the assistant create its own tables).
+- `--no-confirm` and `--allow-external-writes` are announced on standard error at startup and in the
+  instructions the assistant receives.
 
 snippet: sample_mcp_options
 

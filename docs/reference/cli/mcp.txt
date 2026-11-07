@@ -16,6 +16,10 @@ Options:
                                          connections and connection strings); read-only otherwise
   --statement-timeout <SECONDS>          Seconds a statement may run before it is cancelled (default
                                          120; 0 for none)
+  --least-privilege                      Connect to pgembed instances as a role that is not a
+                                         superuser (PostgreSQL 14+): it reads, writes and creates,
+                                         but cannot reach files, programs or libraries, even through
+                                         functions; it cannot alter tables the superuser owns
   --connection <NAME=CONNECTION_STRING>  A server the assistant can use by name without seeing its
                                          connection string or password, for example --connection
                                          prod=postgresql://me@db/shop. Repeatable

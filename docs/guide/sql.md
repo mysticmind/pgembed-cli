@@ -6,7 +6,7 @@ snippet: sample_sql_basics
 
 Scripts are split into statements with the real PostgreSQL parser, so dollar-quoted function bodies and
 semicolons inside strings are handled. Each statement's result is shown as it completes. Each statement reaches
-the server on its own; a script the parser cannot read (syntax newer than it knows) must be a single statement. An error shows the
+the server on its own, also in a script with syntax newer than the parser knows (it then asks first). An error shows the
 line and points at the position:
 
 ```txt

@@ -28,10 +28,16 @@ public class SqlSplitTests
     }
 
     [Fact]
-    public void Leaves_a_script_the_parser_rejects_as_one_batch_for_the_server()
+    public void Splits_a_script_the_parser_rejects_with_the_scanner()
     {
-        const string sql = "SELECT FROM WHERE; SELECT 2";
-        Assert.Equal([sql], SqlRunner.Split(sql));
+        // each part reaches the server on its own; the one the parser cannot read asks first
+        Assert.Equal(["SELECT FROM WHERE", "SELECT 2"], SqlRunner.Split("SELECT FROM WHERE; SELECT 2"));
+        Assert.Equal(["SELEC 'a;b'", "SELECT $$c;d$$"], SqlRunner.Split("SELEC 'a;b'; SELECT $$c;d$$"));
+        // the scanner skips statements that start with a word it does not know; none is lost
+        Assert.Equal(["SELECT 'a;b'", "SELEC 2"], SqlRunner.Split("SELECT 'a;b'; SELEC 2"));
+        // two such statements in a row stay together, and the server refuses a command with two statements
+        Assert.Equal(["SELEC 1; SELEC 'é;'", "SELECT 2"], SqlRunner.Split("SELEC 1; SELEC 'é;'; SELECT 2"));
+        Assert.Contains(SqlSafety.Changes(SqlRunner.Split("SELEC 1; SELECT 2")), c => c.Statement == "SELEC 1" && c.What.Contains("could not be checked"));
     }
 }
 

@@ -216,3 +216,39 @@ public class ExtensionSourceTests
     public void Refuses_an_unverified_extension_over_plain_http() =>
         Assert.Throws<MysticMind.PostgresEmbed.PostgresEmbedException>(() => InstanceManager.ParseExtension("http://example.com/postgis.zip"));
 }
+
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class ProcessEnvironment
+{
+    public const string Name = "process environment";
+}
+
+/// <summary>PGEMBED_REQUIRE_PASSWORD changes the whole process, so this runs alone.</summary>
+[Collection(ProcessEnvironment.Name)]
+public class RequirePasswordEverywhereTests : IAsyncLifetime
+{
+    private readonly string _name = TestCache.UniqueName("rq");
+
+    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
+
+    public async ValueTask DisposeAsync() => await TestCli.RunAsync("rm", _name, "--force", "--yes");
+
+    [Fact]
+    public async Task Every_new_instance_gets_a_password_when_the_machine_asks_for_it()
+    {
+        Environment.SetEnvironmentVariable("PGEMBED_REQUIRE_PASSWORD", "1");
+        try
+        {
+            var started = await TestCli.RunAsync("start", _name, "--version", "17", "--port", "0");
+            Assert.True(started.ExitCode == 0, started.All);
+            Assert.Contains("Password=***", started.Console);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PGEMBED_REQUIRE_PASSWORD", null);
+        }
+
+        var connstr = (await TestCli.RunAsync("connstr", _name, "--format", "npgsql")).Out;
+        Assert.Contains("Password=", connstr);
+    }
+}

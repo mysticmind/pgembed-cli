@@ -276,6 +276,46 @@ public class McpTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Least_privilege_keeps_the_assistant_off_files_and_programs_even_unconfirmed()
+    {
+        var started = await TestCli.RunAsync("start", _name, "--version", "17", "--port", "0");
+        Assert.True(started.ExitCode == 0, started.All);
+        var setup = await TestCli.RunAsync("sql", _name, "--yes",
+            "CREATE TABLE books(id int); CREATE FUNCTION config() RETURNS text AS $$ SELECT pg_read_file('postgresql.conf') $$ LANGUAGE sql");
+        Assert.True(setup.ExitCode == 0, setup.All);
+
+        // no confirmation at all, so only the server's privileges stand in the way
+        var client = await ConnectAsync(new McpPolicy(false, NoConfirm: true, false, LeastPrivilege: true));
+        var marker = Path.Combine(Path.GetTempPath(), $"pgembed-least-{Guid.NewGuid():N}");
+
+        var hidden = await Call(client, "run_sql", new() { ["target"] = _name, ["sql"] = "SELECT config()" });
+        Assert.True(hidden.IsError);
+        Assert.Contains("permission denied", Text(hidden));
+
+        var program = await Call(client, "run_sql", new() { ["target"] = _name, ["sql"] = $"COPY (SELECT 1) TO PROGRAM 'touch {marker}'" });
+        Assert.True(program.IsError);
+        Assert.False(File.Exists(marker));
+
+        // ordinary work still works: reading and writing the superuser's tables, creating its own
+        var work = await Call(client, "run_sql", new()
+        {
+            ["target"] = _name,
+            ["sql"] = "INSERT INTO books VALUES (1); CREATE TABLE notes(id int); INSERT INTO notes VALUES (2); SELECT current_user AS who"
+        });
+        Assert.True(work.IsError != true, Text(work));
+        Assert.Contains(PgEmbedTools.AssistantRole, Text(work));
+    }
+
+    [Fact]
+    public void Relaxed_protections_are_named()
+    {
+        Assert.Empty(new McpPolicy(false, false, false).Relaxations());
+        var relaxed = new McpPolicy(false, NoConfirm: true, AllowExternalWrites: true).Relaxations().ToList();
+        Assert.Contains(relaxed, r => r.StartsWith("--no-confirm"));
+        Assert.Contains(relaxed, r => r.StartsWith("--allow-external-writes"));
+    }
+
+    [Fact]
     public async Task A_read_only_server_refuses_every_write()
     {
         var client = await ConnectAsync(new McpPolicy(ReadOnly: true, false, false));

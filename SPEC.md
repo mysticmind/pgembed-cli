@@ -96,9 +96,12 @@ untrusted. What holds (each with tests):
 | Terminals | control characters in data, names, server messages and logs shown as symbols, never sent; pipes and files unchanged |
 | Downloads | Maven SHA-256 checked; https or local repositories only (`PGEMBED_ALLOW_HTTP_REPO=1` to override); http extensions need `#sha256=`; library 5.3 `RequireChecksum` refuses mirrors that publish none |
 | Runaway queries | MCP statement timeout (120 s, `--statement-timeout`); none from the CLI, where Ctrl+C cancels |
+| Functions the user defines | not looked into (a superuser can do anything through them); `pgembed mcp --least-privilege` (PostgreSQL 14+) connects as `pgembed_assistant` (`LOGIN NOSUPERUSER NOCREATEROLE`, `pg_read_all_data`, `pg_write_all_data`, `CREATE` on the database and `public`), so the server refuses files, programs and libraries whatever the SQL |
+| Relaxed protections | `--no-confirm` and `--allow-external-writes` are announced on standard error at startup and in the MCP server instructions |
+| Trust authentication | the default, so library tests attach without a password; `PGEMBED_REQUIRE_PASSWORD=1` gives every new instance one |
 
-Not covered, by design: functions the user defines (a superuser can do anything through them); trust
-authentication by default; `--no-confirm` and `--allow-external-writes`, which turn protections off on request.
+Not covered, by design: functions the user defines unless `--least-privilege` is on; `--no-confirm` and
+`--allow-external-writes`, which turn protections off on request.
 
 ## Packaging and repos
 
@@ -253,7 +256,7 @@ Names accept wildcards where several instances make sense: `pgembed stop ci-*`.
 - **classify statements**: `sql` and the prompt confirm schema changes and changes to existing rows before they run (calling out `UPDATE`/`DELETE` without `WHERE`), and MCP's read-only mode refuses them before they reach the server (on top of the read-only transaction);
 - **(proposed, 0.2)** **format SQL** in `format` and `format_sql` (`Parser.Format`), and **summarize statements** in `sql --check` and `check_sql` (`Parser.Summary`: tables, functions, filter columns, statement types).
 
-The server stays the authority: when the parser rejects SQL the server might accept (for example syntax newer than the parser's PostgreSQL 18 grammar), pgembed still sends it; since it cannot classify it, it asks first (or needs `--yes`). Each command reaches the server as exactly one statement (Npgsql's SQL rewriting is off), so SQL the parser cannot read must be a single statement; a script of several needs splitting. This is what keeps a statement from hiding where pgembed's reading and the server's differ.
+The server stays the authority: when the parser rejects SQL the server might accept (for example syntax newer than the parser's PostgreSQL 18 grammar), pgembed still sends it; since it cannot classify it, it asks first (or needs `--yes`). Each command reaches the server as exactly one statement (Npgsql's SQL rewriting is off): scripts are split by the parser, or, for SQL it cannot read, by its scanner (strings, comments and dollar quotes, without the grammar). This is what keeps a statement from hiding where pgembed's reading and the server's differ.
 
 ## pgembed 0.2
 
@@ -269,7 +272,7 @@ The server stays the authority: when the parser rejects SQL the server might acc
 claude mcp add pgembed -- dnx pgembed mcp        # Claude Code
 ```
 
-Options: `pgembed mcp [--read-only] [--no-confirm] [--allow-external-writes] [--cache-dir <path>]`.
+Options: `pgembed mcp [--read-only] [--no-confirm] [--allow-external-writes] [--least-privilege] [--statement-timeout <s>] [--connection <name=connstr>] [--cache-dir <path>]`.
 
 | Tool | CLI equivalent | Does |
 | --- | --- | --- |

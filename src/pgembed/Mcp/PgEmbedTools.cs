@@ -15,8 +15,16 @@ namespace PgEmbed.Cli.Mcp;
 
 /// <summary>How the MCP server guards the databases it reaches.</summary>
 internal sealed record McpPolicy(
-    bool ReadOnly, bool NoConfirm, bool AllowExternalWrites, IReadOnlyDictionary<string, string>? Connections = null, int StatementTimeout = 120)
+    bool ReadOnly, bool NoConfirm, bool AllowExternalWrites, IReadOnlyDictionary<string, string>? Connections = null, int StatementTimeout = 120,
+    bool LeastPrivilege = false)
 {
+    /// <summary>What this server lets the assistant do beyond the defaults, for the instructions and a startup warning.</summary>
+    public IEnumerable<string> Relaxations()
+    {
+        if (NoConfirm) yield return "--no-confirm: changes, kills and removals run without asking the user";
+        if (AllowExternalWrites) yield return "--allow-external-writes: servers pgembed did not start can be written to";
+    }
+
     /// <summary>Servers the assistant uses by name, from --connection: their connection strings never reach it.</summary>
     public IReadOnlyDictionary<string, string> Named { get; } = Connections ?? new Dictionary<string, string>();
 }
@@ -28,6 +36,8 @@ internal sealed record McpPolicy(
 /// </summary>
 internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDisposable
 {
+    public McpPolicy Policy => policy;
+
     public const int DefaultMaxRows = 100;
     public const int MaxMaxRows = 10_000;
     public const int MaxValueLength = 2_000;
@@ -36,6 +46,10 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     private readonly Dictionary<string, NpgsqlDataSource> _sources = [];
     private readonly SemaphoreSlim _sourcesLock = new(1, 1);
     private readonly List<PgServer> _started = [];
+    private readonly HashSet<string> _assistantRoles = [];
+
+    /// <summary>The role the assistant connects to pgembed instances as with --least-privilege.</summary>
+    public const string AssistantRole = "pgembed_assistant";
 
     // ---------- versions and extensions ----------
 
@@ -374,6 +388,48 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     // ---------- helpers ----------
 
     /// <summary>
+    /// Creates the assistant's role once per instance and database (PostgreSQL 14 and later): it can log in, read
+    /// and write every table (pg_read_all_data, pg_write_all_data) and create objects in the database and in public,
+    /// but it is not a superuser. With a password-protected instance it gets the instance's password. Then the
+    /// connection logs in as it.
+    /// </summary>
+    private async Task UseAssistantRoleAsync(NpgsqlConnectionStringBuilder builder, CancellationToken ct)
+    {
+        var key = $"{builder.Port}/{builder.Database}";
+        bool create;
+        lock (_assistantRoles) create = _assistantRoles.Add(key);
+
+        if (create)
+        {
+            var admin = new NpgsqlConnectionStringBuilder(builder.ConnectionString) { Pooling = false };
+            await using var connection = new NpgsqlConnection(admin.ConnectionString);
+            await connection.OpenAsync(ct);
+            if (connection.PostgreSqlVersion.Major < 14)
+            {
+                lock (_assistantRoles) _assistantRoles.Remove(key);
+                throw new McpException("--least-privilege needs PostgreSQL 14 or later (for pg_read_all_data and pg_write_all_data).");
+            }
+
+            var database = connection.Database.Replace("\"", "\"\"");
+            string[] statements =
+            [
+                $"DO $$BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{AssistantRole}') THEN CREATE ROLE {AssistantRole} LOGIN NOSUPERUSER NOCREATEROLE; END IF; END$$",
+                $"GRANT pg_read_all_data, pg_write_all_data TO {AssistantRole}",
+                $"GRANT CREATE, TEMPORARY ON DATABASE \"{database}\" TO {AssistantRole}",
+                $"GRANT USAGE, CREATE ON SCHEMA public TO {AssistantRole}",
+                builder.Password is { Length: > 0 } password ? $"ALTER ROLE {AssistantRole} PASSWORD '{password.Replace("'", "''")}'" : "SELECT 1"
+            ];
+            foreach (var sql in statements)
+            {
+                await using var command = new NpgsqlCommand(sql, connection);
+                await command.ExecuteNonQueryAsync(ct);
+            }
+        }
+
+        builder.Username = AssistantRole;
+    }
+
+    /// <summary>
     /// Read-only mode, enforced by the server: the transaction is read-only and, on PostgreSQL 14 and later when
     /// connected as a superuser (as to a pgembed instance), runs as the built-in pg_read_all_data role, which
     /// reads every table but cannot read or write files, run programs or load libraries. That holds even for
@@ -434,6 +490,10 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         {
             throw new McpException(System.Text.RegularExpressions.Regex.Replace(ex.Message, @"Start it with: pgembed start (\S+)", "Start it with start_instance."));
         }
+
+        // --least-privilege: on a pgembed instance, connect as a role that is not a superuser, so the server itself
+        // keeps the assistant away from files, programs and libraries, even through functions the check cannot see
+        if (policy.LeastPrivilege && !IsExternal(target)) await UseAssistantRoleAsync(builder, ct);
 
         builder.Pooling = true;
         // a runaway query does not hang the assistant: each statement gets StatementTimeout seconds
