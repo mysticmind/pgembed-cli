@@ -47,7 +47,7 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         public bool Timing { get; set; }
 
         [CommandOption("--check")]
-        [Description("Only check the syntax, with the PostgreSQL parser; needs no server")]
+        [Description("Check the syntax and summarize each statement (tables, functions, whether it asks first); needs no server")]
         public bool Check { get; set; }
 
         [CommandOption("--no-pager")]
@@ -76,12 +76,18 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
             output.PagerCommand = Pager.Command();
             output.ScreenHeight = Pager.ScreenHeight();
         }
-        var sql = await ReadSqlAsync(settings, ct);
-
         if (settings.Check)
         {
-            return sql is null ? throw new PostgresEmbedException("Give SQL to check: as an argument, with -f <file>, or piped in.") : Check(cli, sql);
+            // --check needs no server: in "sql --check '<sql>'" the one argument is the SQL, not a target
+            var checkedSql = settings.Sql is null && settings.File is null && IsSqlNotTarget(cli, settings.Target)
+                ? settings.Target
+                : await ReadSqlAsync(settings, ct);
+            return string.IsNullOrWhiteSpace(checkedSql)
+                ? throw new PostgresEmbedException("Give SQL to check: as an argument, with -f <file>, or piped in.")
+                : Check(cli, checkedSql);
         }
+
+        var sql = await ReadSqlAsync(settings, ct);
 
         var (target, label) = await ResolveTargetAsync(cli, settings.Target, settings.Database, settings.Schema, ct);
 
@@ -167,6 +173,10 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         return 0;
     }
 
+    // an instance is a target; text that parses is SQL; then a connection string; anything else is SQL to report on
+    private static bool IsSqlNotTarget(CliContext cli, string argument) =>
+        !cli.Instances.Exists(argument) && (Parser.Parse(argument).IsSuccess || !Connections.IsConnectionString(argument));
+
     private static async Task<string?> ReadSqlAsync(Settings settings, CancellationToken ct)
     {
         if (settings.Sql is { Length: > 0 } sql) return sql;
@@ -177,17 +187,43 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
 
     private static int Check(CliContext cli, string sql)
     {
-        var parsed = Parser.Parse(sql);
-        if (parsed.IsSuccess)
+        var result = SqlAnalysis.Check(sql);
+        if (cli.Settings.Json)
         {
-            var count = SqlRunner.Split(sql).Count;
-            if (cli.Settings.Json) cli.WriteJson(new { valid = true, statements = count });
-            else cli.Console.MarkupLineInterpolated($"[green]✓[/] Valid SQL: {count} statement{(count == 1 ? "" : "s")}");
-            return 0;
+            cli.WriteJson(result);
+            return result.Valid ? 0 : 1;
         }
 
-        if (cli.Settings.Json) cli.WriteJson(new { valid = false, error = parsed.Error.Message, position = parsed.Error.CursorPos });
-        else Renderers.ReportError(cli.Console, sql, parsed.Error.Message ?? "syntax error", parsed.Error.CursorPos);
-        return 1;
+        if (!result.Valid)
+        {
+            Renderers.ReportError(cli.Console, sql, result.Error!.Message, result.Error.Position);
+            return 1;
+        }
+
+        var count = result.Statements.Count;
+        cli.Console.MarkupLineInterpolated($"[green]✓[/] Valid SQL: {count} statement{(count == 1 ? "" : "s")}");
+        var grid = new Grid().AddColumn(new GridColumn().NoWrap().PadRight(2)).AddColumn(new GridColumn().NoWrap().PadRight(2)).AddColumn();
+        for (var i = 0; i < count; i++)
+        {
+            var statement = result.Statements[i];
+            var touches = string.Join("; ", new[]
+            {
+                Uses(statement, "read", "reads"), Uses(statement, "write", "writes"), Uses(statement, "define", "defines"),
+                statement.Functions.Count > 0 ? "calls " + string.Join(", ", statement.Functions) : null
+            }.Where(t => t is not null));
+            var kind = statement.Kinds.Count > 0 ? string.Join(", ", statement.Kinds) : "?";
+            var change = statement.Change is null ? ""
+                : $"\n[{(statement.ChangesEveryRow ? "red" : "yellow")}]! {Markup.Escape(statement.Change)}, asks first[/]";
+            grid.AddRow(new Markup($"[dim]{i + 1}[/]"), new Text(kind), new Markup(Markup.Escape(touches) + change));
+        }
+
+        cli.Console.Write(grid);
+        return 0;
+    }
+
+    private static string? Uses(StatementCheck statement, string use, string verb)
+    {
+        var tables = statement.Tables.Where(t => t.Use == use).Select(t => t.Name).ToList();
+        return tables.Count > 0 ? $"{verb} {string.Join(", ", tables)}" : null;
     }
 }

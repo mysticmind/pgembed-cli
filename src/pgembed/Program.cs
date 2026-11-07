@@ -83,6 +83,10 @@ public static class Program
         config.AddCommand<SqlCommand>("sql").WithDescription("Run SQL against an instance and show the results")
             .WithExample("sql", "app", "SELECT version()").WithExample("sql", "app", "-f", "seed.sql");
 
+        config.AddCommand<FormatCommand>("format").WithDescription("Format SQL, keeping comments; needs no server")
+            .WithExample("format", "select * from t where id=1").WithExample("format", "-f", "schema.sql", "--write")
+            .WithExample("format", "-f", "a.sql", "-f", "b.sql", "--check");
+
         config.AddCommand<SchemaCommand>("schema").WithDescription("List tables, or describe one: columns, keys, indexes, constraints")
             .WithExample("schema", "app").WithExample("schema", "app", "books").WithExample("schema", "app", "orders", "--schema", "sales", "--json");
 
