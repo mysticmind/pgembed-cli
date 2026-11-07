@@ -109,7 +109,9 @@ public static class Program
                 if (ex.InnerException is { } inner) services.Console.MarkupLineInterpolated($"[dim]{inner.Message}[/]");
                 return 1;
             default:
-                services.Console.WriteException(ex, ExceptionFormats.ShortenEverything);
+                // a bug, not an expected failure: one line on the console, the details on standard error
+                services.Console.MarkupLineInterpolated($"[red]error:[/] {ex.GetType().Name}: {ex.Message}");
+                services.Error.WriteLine(ex.ToString());
                 return 1;
         }
     }

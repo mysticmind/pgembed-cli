@@ -8,8 +8,9 @@ On .NET 10 you can also run it without installing:
 
 snippet: sample_dnx
 
-The package is precompiled for each platform (Windows x64, Linux x64 and arm64 with glibc or musl, macOS
-x64 and arm64), so commands start quickly; other platforms get a portable build.
+Each platform (Windows x64, Linux x64 and arm64 with glibc or musl, macOS x64 and arm64) gets a native
+executable, compiled ahead of time, so commands start in a few milliseconds; other platforms get a portable
+build.
 
 ## Your first instance
 

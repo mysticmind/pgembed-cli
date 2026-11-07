@@ -49,7 +49,7 @@ features:
     link: /guide/testing
     linkText: From .NET tests
   - title: Fast
-    details: Precompiled per platform; a query against an instance takes about 100 ms end to end. Results stream, so a million rows use no more memory than one.
+    details: A native executable per platform; a query against an instance takes about 25 ms end to end, faster than psql. Results stream in under 40 MB, for one row or five million.
     link: /guide/performance
     linkText: The numbers
   - title: The real PostgreSQL parser

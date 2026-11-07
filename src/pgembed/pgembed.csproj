@@ -15,13 +15,17 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>pgembed</ToolCommandName>
     <PackageId>pgembed</PackageId>
-    <!-- One package per platform, precompiled (ReadyToRun) for a faster start, plus a portable "any"
-         package for other platforms; a top-level package points at them, and dotnet tool install and
-         dnx pick the right one. Push the platform packages before the top-level one. -->
+    <!-- One Native AOT package per platform (a native executable: no JIT, no runtime to load), a portable
+         "any" package for other platforms, and a top-level package that points at them; dotnet tool install
+         and dnx pick the right one. AOT compiles only for the OS it runs on, so publish.yaml packs each
+         platform on a matching runner:
+           dotnet pack                               the top-level package
+           dotnet pack -r <rid>                      one platform, Native AOT
+           dotnet pack -r any -p:PublishAot=false    the portable package
+         Push the platform packages before the top-level one. -->
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-x64;osx-arm64;any</RuntimeIdentifiers>
     <ToolPackageRuntimeIdentifiers>$(RuntimeIdentifiers)</ToolPackageRuntimeIdentifiers>
-    <PublishReadyToRun>true</PublishReadyToRun>
-    <SelfContained>false</SelfContained>
+    <PublishAot>true</PublishAot>
     <!-- also an MCP server: nuget.org shows its configuration, and dnx pgembed mcp runs it -->
     <PackageType>McpServer</PackageType>
     <VersionPrefix>0.2.0</VersionPrefix>
@@ -37,6 +41,12 @@
     <PackageIcon>icon.png</PackageIcon>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+  <!-- platform builds: no debug symbols in the package (a .dSYM on macOS is over 100 MB) -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'any'">
+    <StripSymbols>true</StripSymbols>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">

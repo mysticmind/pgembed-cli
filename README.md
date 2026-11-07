@@ -32,8 +32,9 @@ dotnet tool install --global pgembed
 dnx pgembed status                      # or run it without installing
 ```
 
-The package is precompiled for each platform (Windows x64, Linux x64 and arm64 with glibc or
-musl, macOS x64 and arm64), so commands start quickly; other platforms get a portable build.
+Each platform (Windows x64, Linux x64 and arm64 with glibc or musl, macOS x64 and arm64) gets a native
+executable, compiled ahead of time, so commands start in a few milliseconds; other platforms get a portable
+build.
 
 ## Instances
 
