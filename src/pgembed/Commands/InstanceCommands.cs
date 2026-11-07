@@ -64,7 +64,7 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
             ? versions.Select(v => ($"{settings.Name}-{VersionOrder.Major(v)}", (string?)v)).ToList()
             : [(settings.Name, versions.FirstOrDefault())];
 
-        var results = new List<object>();
+        var results = new List<StartedInstance>();
         foreach (var (name, version) in targets)
         {
             StartResult result = null!;
@@ -80,7 +80,7 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
             }
 
             var port = result.Server.PgPort;
-            results.Add(new { name, version = result.Record.Version, port, attached = result.Attached, connectionString = InstanceManager.ConnectionString(port) });
+            results.Add(new StartedInstance(name, result.Record.Version, port, result.Attached, InstanceManager.ConnectionString(port)));
 
             if (!settings.Json)
             {
@@ -97,7 +97,8 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
             }
         }
 
-        if (settings.Json) cli.WriteJson(results.Count == 1 ? results[0] : results);
+        if (settings.Json && results.Count == 1) cli.WriteJson(results[0]);
+        else if (settings.Json) cli.WriteJson(results);
         return 0;
     }
 
@@ -150,7 +151,7 @@ internal sealed class StopCommand(CliServices services) : AsyncCommand<Instances
     {
         var cli = new CliContext(settings, services);
         var names = settings.Resolve(cli.Registry);
-        var results = new List<object>();
+        var results = new List<InstanceActionResult>();
         var exit = 0;
 
         foreach (var name in names)
@@ -158,13 +159,13 @@ internal sealed class StopCommand(CliServices services) : AsyncCommand<Instances
             if (!cli.Instances.Exists(name))
             {
                 if (!settings.Json) cli.Console.MarkupLineInterpolated($"[red]✗[/] There is no instance named [bold]{name}[/]");
-                results.Add(new { name, result = "not found" });
+                results.Add(new InstanceActionResult(name, "not found"));
                 exit = 1;
                 continue;
             }
 
             var acted = await act(cli, name);
-            results.Add(new { name, result = acted ? doneVerb.ToLowerInvariant() : "not running" });
+            results.Add(new InstanceActionResult(name, acted ? doneVerb.ToLowerInvariant() : "not running"));
             if (!settings.Json)
             {
                 cli.Console.MarkupLineInterpolated(acted
@@ -203,7 +204,7 @@ internal sealed class RestartCommand(CliServices services) : AsyncCommand<Restar
         await InstallCommand.Spin(cli, $"Restarting {settings.Name}", async () => result = await cli.Instances.StartAsync(
             settings.Name, null, null, new Dictionary<string, string>(), [], keepRunningAfterExit: true, false, ct));
 
-        if (settings.Json) cli.WriteJson(new { name = settings.Name, version = result.Record.Version, port = result.Server.PgPort });
+        if (settings.Json) cli.WriteJson(new RestartedInstance(settings.Name, result.Record.Version, result.Server.PgPort));
         else cli.Console.MarkupLineInterpolated($"[green]●[/] Restarted [bold]{settings.Name}[/]: PostgreSQL {result.Record.Version} on port {result.Server.PgPort}");
         return 0;
     }
@@ -227,11 +228,9 @@ internal sealed class StatusCommand(CliServices services) : AsyncCommand<StatusC
 
         if (settings.Json)
         {
-            cli.WriteJson(views.Select(v => new
-            {
-                v.Name, v.Version, v.DataMajor, state = v.Status.State, v.Port, processId = v.Status.ProcessId,
-                startedAt = v.Status.StartedAt, dataBytes = v.DataBytes
-            }));
+            cli.WriteJson(views.Select(v => new InstanceStatusOutput(
+                v.Name, v.Version, v.DataMajor, v.Status.State.ToString().ToLowerInvariant(), v.Port, v.Status.ProcessId,
+                v.Status.StartedAt, v.DataBytes)).ToList());
             return 0;
         }
 
@@ -307,7 +306,7 @@ internal sealed class ConnStrCommand(CliServices services) : AsyncCommand<ConnSt
         if (settings.Json)
         {
             var formats = Connections.FormatNames.ToDictionary(f => f, Format);
-            cli.WriteJson(new { name = settings.Name, port, running, formats });
+            cli.WriteJson(new ConnectionStrings(settings.Name, port, running, formats));
             return 0;
         }
 

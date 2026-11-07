@@ -66,7 +66,7 @@ internal sealed class CliContext
     /// <summary>Writes a value as JSON, bypassing the console renderer so it is never wrapped or colored.</summary>
     public void WriteJson<T>(T value)
     {
-        Services.Out.WriteLine(JsonSerializer.Serialize(value, Json.Options));
+        Services.Out.WriteLine(Core.Json.Serialize(value));
         Services.Out.Flush();
     }
 

@@ -46,15 +46,12 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
 
         if (major is not null)
         {
-            return new { platform = cli.Platform.RuntimeIdentifier, major, versions = newestFirst.Where(v => VersionOrder.Major(v) == major).ToList(), warning = stale };
+            return new McpVersions(cli.Platform.RuntimeIdentifier, major, Versions: newestFirst.Where(v => VersionOrder.Major(v) == major).ToList(), Warning: stale);
         }
 
-        return new
-        {
-            platform = cli.Platform.RuntimeIdentifier,
-            majors = newestFirst.GroupBy(VersionOrder.Major).Select(g => new { major = g.Key, newest = g.First(), count = g.Count() }),
-            warning = stale
-        };
+        return new McpVersions(cli.Platform.RuntimeIdentifier,
+            Majors: newestFirst.GroupBy(VersionOrder.Major).Select(g => new VersionMajor(g.Key, g.First(), g.Count())).ToList(),
+            Warning: stale);
     }
 
     [McpServerTool(Name = "install_version", Idempotent = true)]
@@ -70,7 +67,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
             HttpClient = cli.Services.Http, Logger = cli.Logger
         });
         await server.InstallAsync(ct);
-        return new { version = exact, platform = cli.Platform.RuntimeIdentifier, installDir = server.InstallDir };
+        return new InstalledVersion(exact, cli.Platform.RuntimeIdentifier, server.InstallDir);
     }
 
     [McpServerTool(Name = "list_extensions", ReadOnly = true, Idempotent = true)]
@@ -85,7 +82,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
             PgVersion = exact, BinariesDir = cli.Workspace.BinariesDir, MavenRepo = cli.MavenRepo,
             HttpClient = cli.Services.Http, Logger = cli.Logger
         });
-        return new { version = exact, extensions = await server.GetAvailableExtensionsAsync(ct) };
+        return new McpExtensions(exact, await server.GetAvailableExtensionsAsync(ct));
     }
 
     // ---------- instances ----------
@@ -106,32 +103,24 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         // never disposed: disposing stops a server this process started, and it is meant to outlive this process
         lock (_started) _started.Add(result.Server);
 
-        return new
-        {
-            name, version = result.Record.Version, port = serverPort, attached = result.Attached,
-            connectionString = InstanceManager.ConnectionString(serverPort),
-            uri = Connections.Format("uri", serverPort, InstanceManager.DefaultDatabase, null)
-        };
+        return new StartedInstance(name, result.Record.Version, serverPort, result.Attached,
+            InstanceManager.ConnectionString(serverPort), Connections.Format("uri", serverPort, InstanceManager.DefaultDatabase, null));
     }
 
     [McpServerTool(Name = "list_instances", ReadOnly = true, Idempotent = true)]
     [Description("Every pgembed instance on this machine: name, version, port, state, uptime, data size.")]
     public async Task<object> ListInstances(CancellationToken ct = default)
     {
-        var views = new List<object>();
+        var views = new List<InstanceSummary>();
         foreach (var name in cli.Registry.Names().Where(cli.Instances.Exists))
         {
             var v = await cli.Instances.ViewAsync(name, ct);
             var running = v.Status.State != PgInstanceState.Stopped;
-            views.Add(new
-            {
-                v.Name, version = v.Version ?? v.DataMajor, state = v.Status.State.ToString().ToLowerInvariant(), v.Port,
-                uptimeSeconds = running && v.Status.StartedAt is { } at ? (long)(DateTimeOffset.UtcNow - at).TotalSeconds : (long?)null,
-                dataBytes = v.DataBytes
-            });
+            views.Add(new InstanceSummary(v.Name, v.Version ?? v.DataMajor, v.Status.State.ToString().ToLowerInvariant(), v.Port,
+                running && v.Status.StartedAt is { } at ? (long)(DateTimeOffset.UtcNow - at).TotalSeconds : null, v.DataBytes));
         }
 
-        return new { instances = views };
+        return new McpInstances(views);
     }
 
     [McpServerTool(Name = "stop_instance", Idempotent = true)]
@@ -140,7 +129,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     {
         RequireInstance(name);
         var stopped = await cli.Instances.StopAsync(name, ct);
-        return new { name, stopped, message = stopped ? $"Stopped {name}." : $"{name} was not running." };
+        return new McpStopped(name, stopped, stopped ? $"Stopped {name}." : $"{name} was not running.");
     }
 
     [McpServerTool(Name = "restart_instance")]
@@ -197,7 +186,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     {
         if (!Connections.FormatNames.Contains(format)) throw new McpException($"format is one of: {string.Join(", ", Connections.FormatNames)}");
         var port = await RunningPortAsync(name, ct);
-        return new { name, format, connectionString = Connections.Format(format, port, database ?? InstanceManager.DefaultDatabase, schema) };
+        return new McpConnectionString(name, format, Connections.Format(format, port, database ?? InstanceManager.DefaultDatabase, schema));
     }
 
     [McpServerTool(Name = "get_logs", ReadOnly = true, Idempotent = true)]
@@ -207,7 +196,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         RequireInstance(name);
         var file = cli.Instances.LogFile(name);
         var tail = File.Exists(file) ? LogsCommand.ReadShared(file).TakeLast(Math.Clamp(lines, 1, 1000)).ToList() : [];
-        return new { name, lines = tail };
+        return new McpLogs(name, tail);
     }
 
     [McpServerTool(Name = "doctor", ReadOnly = true, Idempotent = true)]
@@ -215,11 +204,8 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     public async Task<object> Doctor([Description("Port to check is free (default 5432)")] int port = 5432, CancellationToken ct = default)
     {
         var checks = await DoctorCommand.RunChecksAsync(cli, null, port, ct);
-        return new
-        {
-            ok = checks.All(c => c.Outcome != DoctorCommand.Outcome.Failed),
-            checks = checks.Select(c => new { c.Name, outcome = c.Outcome.ToString().ToLowerInvariant(), c.Detail })
-        };
+        return new McpDoctor(checks.All(c => c.Outcome != DoctorCommand.Outcome.Failed),
+            checks.Select(c => new DoctorCheckOutput(c.Name, c.Outcome.ToString().ToLowerInvariant(), c.Detail)).ToList());
     }
 
     // ---------- SQL ----------
@@ -293,7 +279,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     public object FormatSql([Description("SQL: one or more statements; comments are kept")] string sql)
     {
         var (formatted, error) = SqlAnalysis.Format(sql);
-        return error is null ? new { formatted } : throw new McpException(SyntaxMessage(sql, error));
+        return error is null ? new FormattedSql(formatted) : throw new McpException(SyntaxMessage(sql, error));
     }
 
     [McpServerTool(Name = "explain_query")]
@@ -332,7 +318,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
             return new CallToolResult
             {
                 Content = [new TextContentBlock { Text = plan }],
-                StructuredContent = JsonSerializer.SerializeToElement(new { plan = document.RootElement.Clone(), analyzed = analyze, rolledBack = true }, Json.Compact)
+                StructuredContent = Json.ToElement(new McpExplain(document.RootElement.Clone(), analyze, true))
             };
         }
         catch (PostgresException ex)
@@ -354,7 +340,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         CancellationToken ct = default)
     {
         await using var connection = await OpenAsync(target, database, null, ct);
-        return new { relations = await SchemaReader.ListAsync(connection, [.. SchemaReader.Tables, .. SchemaReader.Views, "f"], null, schema, ct) };
+        return new McpRelations(await SchemaReader.ListAsync(connection, [.. SchemaReader.Tables, .. SchemaReader.Views, "f"], null, schema, ct));
     }
 
     [McpServerTool(Name = "describe_table", ReadOnly = true, Idempotent = true)]
@@ -550,15 +536,14 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         public CallToolResult ToResult()
         {
             if (_shortened) _text.AppendLine($"_Values longer than {MaxValueLength} characters were shortened._");
-            object structured = _error is null
-                ? new { results = _results }
-                : new { results = _results, error = new { _error.SqlState, _error.Message, _error.Position, _error.Detail, _error.Hint, _error.Statement } };
+            var structured = new McpSqlResults(_results, _error is null ? null
+                : new McpSqlError(_error.SqlState, _error.Message, _error.Position, _error.Detail, _error.Hint, _error.Statement));
 
             var text = _error is null ? _text.ToString() : _text + ErrorMessage(_error) + (_results.Count > 0 ? $"\n({_results.Count} statement(s) ran before it.)" : "");
             return new CallToolResult
             {
                 Content = [new TextContentBlock { Text = text.Length == 0 ? "OK" : text.TrimEnd() }],
-                StructuredContent = JsonSerializer.SerializeToElement(structured, Json.Compact),
+                StructuredContent = Json.ToElement(structured),
                 IsError = _error is not null
             };
         }

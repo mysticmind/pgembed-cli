@@ -1,5 +1,8 @@
 using System.ComponentModel;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using PgEmbed.Cli.Infrastructure;
@@ -44,6 +47,12 @@ internal sealed class McpCommand(CliServices services) : AsyncCommand<McpCommand
         return 0;
     }
 
+    // tool arguments and results: pgembed's generated types, and the SDK's own (CallToolResult and the like)
+    private static readonly JsonSerializerOptions ToolJson = new(Core.Json.Compact)
+    {
+        TypeInfoResolver = JsonTypeInfoResolver.Combine(Core.PgEmbedJsonContext.Default, McpJsonUtilities.DefaultOptions.TypeInfoResolver!)
+    };
+
     /// <summary>The server's options and tools; shared with the tests, which run it over in-memory streams.</summary>
     internal static McpServerOptions CreateOptions(PgEmbedTools tools)
     {
@@ -58,7 +67,7 @@ internal sealed class McpCommand(CliServices services) : AsyncCommand<McpCommand
         foreach (var method in typeof(PgEmbedTools).GetMethods(BindingFlags.Instance | BindingFlags.Public))
         {
             if (method.GetCustomAttribute<McpServerToolAttribute>() is null) continue;
-            options.ToolCollection.Add(McpServerTool.Create(method, tools, new McpServerToolCreateOptions { SerializerOptions = Core.Json.Compact }));
+            options.ToolCollection.Add(McpServerTool.Create(method, tools, new McpServerToolCreateOptions { SerializerOptions = ToolJson }));
         }
 
         return options;

@@ -541,7 +541,7 @@ internal sealed class JsonRenderer : IResultSink, IDisposable
             w.WriteString("statement", error.Statement);
             w.WriteEndObject();
         }));
-        return JsonSerializer.Serialize(document.RootElement, Json.Options).ReplaceLineEndings("\n  ");
+        return Json.Serialize(document.RootElement).ReplaceLineEndings("\n  ");
     }
 
     private string Write(Action<Utf8JsonWriter> write)

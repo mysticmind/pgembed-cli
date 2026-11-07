@@ -27,7 +27,7 @@ internal sealed class InstanceRegistry(Workspace workspace)
         var file = Path.Combine(workspace.InstanceDir(name), FileName);
         try
         {
-            return File.Exists(file) ? JsonSerializer.Deserialize<InstanceRecord>(File.ReadAllText(file), Json.Options) : null;
+            return File.Exists(file) ? Json.Deserialize<InstanceRecord>(File.ReadAllText(file)) : null;
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
@@ -41,7 +41,7 @@ internal sealed class InstanceRegistry(Workspace workspace)
         Directory.CreateDirectory(dir);
         var file = Path.Combine(dir, FileName);
         var temp = $"{file}.{Guid.NewGuid():N}.tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(record, Json.Options));
+        File.WriteAllText(temp, Json.Serialize(record));
         File.Move(temp, file, overwrite: true);
     }
 

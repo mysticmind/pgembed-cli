@@ -56,7 +56,7 @@ internal sealed class VersionsCommand(CliServices services) : AsyncCommand<Versi
 
         if (settings.Json)
         {
-            cli.WriteJson(majors.Select(m => new { m.Major, m.Newest, Count = m.Versions.Count }));
+            cli.WriteJson(majors.Select(m => new VersionMajor(m.Major, m.Newest, m.Versions.Count)).ToList());
             return 0;
         }
 
@@ -102,7 +102,7 @@ internal sealed class InstallCommand(CliServices services) : AsyncCommand<Instal
 
         await Spin(cli, $"Installing PostgreSQL {version}", () => server.InstallAsync(ct));
 
-        if (settings.Json) cli.WriteJson(new { version, platform = cli.Platform.RuntimeIdentifier, installDir = server.InstallDir });
+        if (settings.Json) cli.WriteJson(new InstalledVersion(version, cli.Platform.RuntimeIdentifier, server.InstallDir));
         else cli.Console.MarkupLineInterpolated($"Installed PostgreSQL [bold]{version}[/] ({cli.Platform.RuntimeIdentifier}) at {server.InstallDir}");
         return 0;
     }

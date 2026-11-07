@@ -51,7 +51,7 @@ internal sealed class FormatCommand(CliServices services) : AsyncCommand<FormatC
             var (formatted, error) = SqlAnalysis.Format(sql);
             if (error is not null) return Fail(cli, sql, null, error);
 
-            if (settings.Json) cli.WriteJson(new { formatted });
+            if (settings.Json) cli.WriteJson(new FormattedSql(formatted));
             else
             {
                 services.Out.Write(formatted);
@@ -61,7 +61,7 @@ internal sealed class FormatCommand(CliServices services) : AsyncCommand<FormatC
             return 0;
         }
 
-        var results = new List<object>();
+        var results = new List<FormatFileResult>();
         var failed = false;
         var unformatted = 0;
         foreach (var file in settings.Files)
@@ -71,7 +71,7 @@ internal sealed class FormatCommand(CliServices services) : AsyncCommand<FormatC
             if (error is not null)
             {
                 Fail(cli, sql, file, error);
-                results.Add(new { file, error = error.Message, error.Position });
+                results.Add(new FormatFileResult(file, Error: error.Message, Position: error.Position));
                 failed = true;
                 continue;
             }
@@ -95,7 +95,7 @@ internal sealed class FormatCommand(CliServices services) : AsyncCommand<FormatC
                 services.Out.Write(formatted);
             }
 
-            results.Add(settings.Write || settings.Check ? new { file, formatted = !changed } : new { file, formatted = (object?)formatted });
+            results.Add(new FormatFileResult(file, settings.Write || settings.Check ? !changed : formatted));
         }
 
         services.Out.Flush();
@@ -109,7 +109,7 @@ internal sealed class FormatCommand(CliServices services) : AsyncCommand<FormatC
     {
         if (cli.Settings.Json && file is null)
         {
-            cli.WriteJson(new { error = error.Message, error.Position });
+            cli.WriteJson(new SyntaxErrorOutput(error.Message, error.Position));
             return 1;
         }
 

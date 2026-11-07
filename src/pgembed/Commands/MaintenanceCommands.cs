@@ -32,7 +32,7 @@ internal sealed class DoctorCommand(CliServices services) : AsyncCommand<DoctorC
 
         if (settings.Json)
         {
-            cli.WriteJson(checks.Select(c => new { c.Name, outcome = c.Outcome.ToString().ToLowerInvariant(), c.Detail }));
+            cli.WriteJson(checks.Select(c => new DoctorCheckOutput(c.Name, c.Outcome.ToString().ToLowerInvariant(), c.Detail)).ToList());
         }
         else
         {
@@ -169,7 +169,7 @@ internal sealed class CacheListCommand(CliServices services) : AsyncCommand<Glob
 
         if (settings.Json)
         {
-            cli.WriteJson(new { cacheDir = cli.Workspace.CacheDir, entries });
+            cli.WriteJson(new CacheListing(cli.Workspace.CacheDir, entries));
             return 0;
         }
 
@@ -244,7 +244,7 @@ internal sealed class CacheCleanCommand(CliServices services) : AsyncCommand<Cac
         var freed = targets.Sum(e => e.Bytes);
         if (settings.Json)
         {
-            cli.WriteJson(new { dryRun = settings.DryRun, removed = targets, freedBytes = freed, skippedInUse = skipped });
+            cli.WriteJson(new CacheCleaned(settings.DryRun, targets, freed, skipped));
             return 0;
         }
 
