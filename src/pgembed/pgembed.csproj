@@ -15,11 +15,13 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>pgembed</ToolCommandName>
     <PackageId>pgembed</PackageId>
-    <VersionPrefix>0.1.0</VersionPrefix>
-    <Description>Run PostgreSQL locally without installing it: named instances of any version in the background, SQL with readable results and errors, version and extension discovery, and a shared download cache. Built on MysticMind.PostgresEmbed.</Description>
+    <!-- also an MCP server: nuget.org shows its configuration, and dnx pgembed mcp runs it -->
+    <PackageType>McpServer</PackageType>
+    <VersionPrefix>0.2.0</VersionPrefix>
+    <Description>Run PostgreSQL locally without installing it: named instances of any version in the background, SQL with readable results and errors, schema inspection, SQL formatting, and an MCP server for AI assistants. Built on MysticMind.PostgresEmbed.</Description>
     <Authors>Babu Annamalai</Authors>
     <Copyright>Copyright (C) Babu Annamalai</Copyright>
-    <PackageTags>postgres;postgresql;pg;embedded;cli;dotnet-tool;testing</PackageTags>
+    <PackageTags>postgres;postgresql;pg;embedded;cli;dotnet-tool;testing;mcp;mcp-server</PackageTags>
     <PackageProjectUrl>https://github.com/mysticmind/pgembed-cli</PackageProjectUrl>
     <RepositoryUrl>https://github.com/mysticmind/pgembed-cli</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -37,6 +39,7 @@
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\assets\icon.png" Pack="true" PackagePath="\" />
+    <None Include=".mcp\server.json" Pack="true" PackagePath="\.mcp\" />
     <InternalsVisibleTo Include="pgembed.Tests" />
   </ItemGroup>
 

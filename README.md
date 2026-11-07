@@ -4,7 +4,8 @@
 
 Run PostgreSQL on your machine without installing it. `pgembed` downloads the official Postgres
 binaries for your platform (Windows, macOS, Linux and Alpine, x64 and arm64), keeps named
-instances of any version running in the background, and runs SQL against them.
+instances of any version running in the background, and runs SQL against them. It is also an
+[MCP server](#mcp-server-for-ai-assistants), so an AI assistant can do the same.
 
 ```console
 $ pgembed start app --version 17
@@ -69,7 +70,8 @@ pgembed sql app -f seed.sql --timing
 cat migrate.sql | pgembed sql app
 pgembed sql app --db shop --schema sales "SELECT * FROM orders"
 pgembed sql app "SELECT * FROM books" --format csv > books.csv
-pgembed sql app --check -f migrate.sql   # syntax check only; needs no server
+pgembed sql --check -f migrate.sql       # syntax and a summary per statement; needs no server
+pgembed sql --check "DELETE FROM books"  # the SQL can be the one argument
 ```
 
 The target is an instance name or a connection string in any common format, so `sql` works with any
@@ -119,7 +121,7 @@ Without SQL to run, `pgembed sql app` opens a prompt:
 - history, kept between sessions
 - Ctrl+C cancels a running statement; `\q` quits
 - psql-style commands: `\d [name]`, `\dt`, `\dv`, `\df`, `\dn`, `\l`, `\c <db>`, `\conninfo`,
-  `\x` (one block per row), `\timing`, `\format <format>`, `\i <file>`, `\?`
+  `\x` (one block per row), `\timing`, `\format <format>`, `\pager [on|off]`, `\i <file>`, `\?`
 
 ### Output formats
 
@@ -127,9 +129,17 @@ Without SQL to run, `pgembed sql app` opens a prompt:
 |---|---|
 | `table` | Fits the terminal, wrapping long values. The default in a terminal |
 | `aligned` | psql-style text, never wrapped, one row per line. The default when output goes to a file or pipe |
-| `json` | Every result, for scripts (`--json` is the same) |
+| `json` | Every result, for scripts (`--json` is the same); `json` and `jsonb` values are nested JSON, one row per line |
 | `csv` | Header and rows |
 | `markdown` | A table for docs and issues |
+
+Results stream: rows are written as they arrive, so a million-row export to `csv` or `json` uses no
+more memory than a one-row query. The `table` view shows the first `--max-rows` rows and stops the
+query there, instead of reading the rest.
+
+In a terminal, a result taller than the screen opens in a pager, as in psql: `PGEMBED_PAGER`, else
+`PAGER`, else `less -SFX` (long lines scroll sideways; a short result just prints). Set `PAGER=` to
+an empty value, pass `--no-pager`, or use `\pager off` in the prompt to turn it off.
 
 | Option | Meaning |
 |---|---|
@@ -139,8 +149,19 @@ Without SQL to run, `pgembed sql app` opens a prompt:
 | `--format` | One of the formats above |
 | `--max-rows` | Rows shown per result in `table` format (default 500) |
 | `--timing` | Show each statement's time |
-| `--check` | Check the syntax without running anything |
+| `--no-pager` | Never open a pager |
+| `--check` | Check the syntax and summarize each statement (kind, tables, functions, whether it asks first) without running anything |
 | `-y, --yes` | Run changes without asking |
+
+## Format
+
+```console
+pgembed format "select a,b from t where a>1"     # prints the formatted SQL
+pgembed format -f schema.sql --write             # rewrites the file
+pgembed format -f a.sql -f b.sql --check         # lists unformatted files and exits 1: a CI lint
+```
+
+Formatting uses the PostgreSQL parser and keeps comments. It needs no server.
 
 ## Schema
 
@@ -154,6 +175,47 @@ pgembed schema app books --json             # one structured document, for scrip
 
 The same descriptions are available as psql-style commands, in the interactive prompt and as
 one-shot SQL: `pgembed sql app "\d books"`, `"\dt sales.*"`, `"\dv"`, `"\df"`, `"\dn"`, `"\l"`.
+
+## MCP server for AI assistants
+
+`pgembed mcp` runs an [MCP](https://modelcontextprotocol.io) server over standard input and output.
+Add it to your assistant:
+
+```console
+claude mcp add pgembed -- dnx pgembed mcp          # Claude Code, on .NET 10 or newer
+```
+
+```json
+{ "mcpServers": { "pgembed": { "command": "dnx", "args": ["pgembed", "mcp"] } } }
+```
+
+(With the tool installed globally, use `"command": "pgembed", "args": ["mcp"]`.)
+
+| Tool | Does |
+|---|---|
+| `list_versions`, `install_version`, `list_extensions` | Versions, ahead-of-time installs, extensions |
+| `start_instance`, `list_instances`, `stop_instance`, `restart_instance` | Instances; started ones keep running after the assistant exits |
+| `kill_instance`, `remove_instance` | Force-kill, or delete with its data (both confirmed) |
+| `get_connection_string`, `get_logs` | For an instance |
+| `run_sql` | Rows (at most `max_rows`, default 100, with a paging hint), affected rows, or an error with its position and hint |
+| `check_sql`, `format_sql` | Offline: syntax and a summary per statement; formatting |
+| `explain_query` | The plan as JSON; with `analyze`, runs it in a transaction that is always rolled back |
+| `describe_schema`, `describe_table` | Tables; columns, keys, indexes, constraints |
+| `doctor` | Why Postgres will not start here |
+
+The same safety rules as the CLI apply:
+
+- Statements that change the schema or existing rows, `kill_instance` and `remove_instance` ask
+  first. Clients that support it ask you directly; otherwise the tool refuses until the assistant
+  calls again with `confirm: true`. That second call is a speed bump for the assistant, not a check
+  by you: your client's approval of tool calls is that check.
+- Read-only mode refuses anything that writes, including `INSERT` and transaction control (so
+  `COMMIT; DELETE ...` cannot escape it), and runs the SQL in a read-only transaction. It applies
+  per call (`read_only: true`), to the whole server (`pgembed mcp --read-only`), and always to
+  servers pgembed did not start (connection-string targets), unless you pass
+  `--allow-external-writes`. Functions that act outside the transaction, such as
+  `pg_terminate_backend`, are not stopped by it; use a restricted role for that.
+- `pgembed mcp --no-confirm` skips the questions, for sandboxes and throwaway agents.
 
 ## Versions and extensions
 

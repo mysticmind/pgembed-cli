@@ -4,7 +4,7 @@
 
 It is built on the [MysticMind.PostgresEmbed](https://github.com/mysticmind/mysticmind-postgresembed) library and uses the same binaries ([zonky](https://github.com/zonkyio/embedded-postgres-binaries)).
 
-Status: 0.1 is built (not yet published); 0.2 is in progress. Decisions marked **(decided)** were agreed on 2026-11-06. Decisions marked **(proposed)** are for 0.2 and wait for agreement.
+Status: 0.1 is built (not yet published); 0.2 is built on the `v0.2` branch except the items listed under "0.2: still open". Decisions marked **(decided)** were agreed on 2026-11-06. Decisions marked **(proposed)** were made for 0.2 on 2026-11-07 and built as described; they wait for review.
 
 ## Goals
 
@@ -26,21 +26,24 @@ Every goal is held to one bar: **exceptional developer experience**. Concretely,
 
 pgembed should feel instant: a command that does not wait on Postgres or the network finishes before the user notices, and large results stream at the speed of the server.
 
-### Baseline (0.1, measured 2026-11-07)
+### Measurements (2026-11-07)
 
-macOS arm64, Release build, warm, against a running Postgres 17 instance; `psql` 14 for comparison.
+macOS arm64, Release build, warm, against a running Postgres 17 instance; `psql` 14 for comparison. "ReadyToRun" is the 0.1 code published with ReadyToRun, to size that gain.
 
-| | 0.1 (JIT) | ReadyToRun | psql |
-| --- | --- | --- | --- |
-| `--version` | 95 ms | 62 ms | |
-| `status` (one instance) | 157 ms | 105 ms | |
-| `sql <instance> "SELECT 1"` | 350 ms | 207 ms | 40 ms |
-| `sql --check "SELECT 1"` | 213 ms | 127 ms | |
-| 1M rows (two columns) as CSV | 2.9 s, 327 MB | | 1.9 s, 121 MB |
-| 1M rows as JSON | 2.8 s, 699 MB | | |
-| 1M rows, `table` capped at 500 | 2.1 s | | |
+| | 0.1 (JIT) | 0.1 ReadyToRun | 0.2 (JIT) | psql |
+| --- | --- | --- | --- | --- |
+| `--version` | 95 ms | 62 ms | 90 ms | |
+| `status` (one instance) | 157 ms | 105 ms | 150 ms | |
+| `sql <instance> "SELECT 1"` | 350 ms | 207 ms | 332 ms | 40 ms |
+| `sql --check "SELECT 1"` | (checked nothing, see below) | | 239 ms | |
+| `format "select 1"` | | | 204 ms | |
+| 1M rows (two columns) as CSV | 2.9 s, 327 MB | | 2.3 s, 130 MB | 1.9 s, 121 MB |
+| 1M rows as JSON | 2.8 s, 699 MB | | 2.1 s, 131 MB | |
+| 1M rows, `table` capped at 500 | 2.1 s | | 0.55 s | |
+| 5M rows as CSV | | | 8.8 s, 130 MB | |
+| MCP tool call, warm (`check_sql`, `get_logs`, a one-row `run_sql`) | | | 1 to 20 ms | |
 
-What the numbers say: about a third of every command is JIT compilation; every format holds the whole result in memory before writing it; the capped table still reads every row; loading the parser costs about 65 ms even for a one-line statement.
+What the numbers say: about a third of every command is JIT compilation, which only ReadyToRun removes (still open, below). Streaming made memory flat: 130 MB is the process with the runtime (62 MB), the parser (25 MB) and Npgsql (25 MB), the same for one row or five million. 0.1's `sql --check "<sql>"` took the SQL as the target and checked an empty statement; 0.2 fixes that, so its time now includes real parsing and summarizing.
 
 ### Budgets
 
@@ -51,7 +54,7 @@ Warm, Release, on the reference machine above; checked in CI against a stored ba
 | Commands that touch neither Postgres nor the network (`--version`, `connstr`, `status` of a few instances) | under 70 ms |
 | `sql <instance> "SELECT 1"` | under 150 ms |
 | `sql --check`, `format` on a short statement | under 100 ms |
-| Streaming formats (`csv`, `json`, `markdown`) | constant memory (under 100 MB whatever the row count), within 1.2x of psql's time |
+| Streaming formats (`csv`, `json`, `markdown`, `aligned`) | memory flat in the row count (no growth past the process baseline), within 1.2x of psql's time |
 | `table` with a cap | time proportional to the cap, not to the result |
 | Interactive prompt, per keystroke (highlighting, syntax check) on a 200-line statement | under 16 ms |
 | MCP tool call, beyond the query itself | under 5 ms |
@@ -59,12 +62,12 @@ Warm, Release, on the reference machine above; checked in CI against a stored ba
 
 ### How
 
-1. **ReadyToRun.** Ship precompiled code. .NET 10's platform-specific tool packages (`ToolPackageRuntimeIdentifiers`) carry a ReadyToRun build per platform, with a portable package as the fallback for older SDKs. Native AOT would be faster still (tens of milliseconds) but Spectre.Console.Cli, PrettyPrompt and reflection-based JSON stand in the way; it is a later spike, not a 0.2 promise.
-2. **Stream results.** The executor yields rows as they arrive; `csv`, `json` (through `Utf8JsonWriter`) and `markdown` write them straight to a buffered output. `aligned` needs column widths, so it buffers up to a window (1,000 rows), as psql does, then continues with those widths. `table` reads at most the cap and cancels the rest.
-3. **Pay only for what is used.** Load the parser only when a command needs it (a single statement with no confirmation question can skip splitting); avoid work in startup paths (no metadata reads, no HTTP client creation, for commands that do not need them).
-4. **Warm processes stay warm.** The MCP server and the web UI keep one `NpgsqlDataSource` per target with pooling, so a tool call reuses an open connection and code that is already compiled.
-5. **The prompt** parses on a short debounce and reuses the last result while the statement is unchanged.
-6. **Measure.** A benchmark project (BenchmarkDotNet) for the core (split, classify, render, executor) and an end-to-end script (`hyperfine`) for the budgets above.
+1. **ReadyToRun (open).** Ship precompiled code. .NET 10's platform-specific tool packages (`ToolPackageRuntimeIdentifiers`) carry a ReadyToRun build per platform, with a portable package as the fallback for older SDKs. Native AOT would be faster still (tens of milliseconds) but Spectre.Console.Cli, PrettyPrompt and reflection-based JSON stand in the way; it is a later spike, not a 0.2 promise. Tried on 2026-11-07: with `ToolPackageRuntimeIdentifiers` and `PublishReadyToRun`, `dotnet pack` builds the per-platform packages (about 25 MB each) but fails on the portable `any` fallback (`NETSDK1047`: no `net8.0/any` target), so the top-level package is not produced and .NET 8 and 9 installs would break. Needs a decision on how the portable fallback is built, and changes to `publish.yaml`.
+2. **Stream results (built).** The executor yields rows as they arrive; `csv`, `json` (through `Utf8JsonWriter`) and `markdown` write them straight to a buffered output. `aligned` needs column widths, so it buffers up to a window (1,000 rows), as psql does, then continues with those widths. `table` reads at most the cap and cancels the rest.
+3. **Pay only for what is used (open).** Load the parser only when a command needs it (a single statement with no confirmation question can skip splitting); avoid work in startup paths (no metadata reads, no HTTP client creation, for commands that do not need them).
+4. **Warm processes stay warm (built for MCP).** The MCP server and the web UI keep one `NpgsqlDataSource` per target with pooling, so a tool call reuses an open connection and code that is already compiled.
+5. **The prompt (open)** parses on a short debounce and reuses the last result while the statement is unchanged.
+6. **Measure (open).** A benchmark project (BenchmarkDotNet) for the core (split, classify, render, executor) and an end-to-end script (`hyperfine`) for the budgets above.
 
 ## Packaging and repos
 
@@ -277,13 +280,13 @@ Not exposed, on purpose: `cache clean` (deletes downloads shared with every proj
 
 **Results sized for an assistant.** `run_sql` returns at most `max_rows` rows per statement (default 100, up to 10,000) with a `truncated` flag and, when truncated, a hint to page with `ORDER BY` and a keyset (`WHERE id > <last>`) or `LIMIT`/`OFFSET`. Reading stops at the cap. Paging stays stateless on purpose: no `offset` argument that wraps the query (it fits only a single `SELECT`, and pages are unstable without `ORDER BY`), and no cursor held open between calls (it would hold a transaction open while the assistant thinks). It also shortens long values (default 2,000 characters, said in the result). Results come as structured content (columns, rows, affected rows, timing; `json` and `jsonb` values nested, not as strings) plus a compact Markdown table for clients that show text only. Errors are tool errors with the SQLSTATE, message, line and caret, detail and hint, so the assistant can correct the SQL.
 
-**Progress.** `install_version` and `start_instance` report download and extraction progress through MCP progress notifications (needs library 5.3, below).
+**Progress (open).** `install_version` and `start_instance` report download and extraction progress through MCP progress notifications (needs library 5.3, below; not built yet).
 
 **Protocol hygiene.** Standard output carries only protocol messages; everything else (library log, warnings) goes to standard error. The MCP host builds the core services directly, not through the CLI's console context, so no Spectre output can reach standard output.
 
 **Packaging.** The tool package declares itself an MCP server (package type `McpServer` and `.mcp/server.json`), so nuget.org shows the configuration, and `dnx` runs it without an install.
 
-### Also in 0.2 (proposed)
+### Also in 0.2 (proposed, built except download progress)
 
 | Item | Why |
 | --- | --- |
@@ -326,11 +329,18 @@ Later, when needed: resumable downloads.
 | Library 5.2.1 | released 2026-11-06: a killed server's shared memory is removed, so kills no longer exhaust macOS's 32 System V segments |
 | pgembed 0.1 | built: `versions`, `install`, `extensions`; instances (`start`/`stop`/`kill`/`restart`/`status`/`connstr`/`logs`/`rm`; background by default, `--foreground`, several versions); `sql` against instances or any connection string, with parser-based splitting, `--check`, `--schema`, confirmation of changes and the `aligned` format; the interactive prompt; `schema` and the `\d` commands; `connstr` in every format; `doctor`, `cache list`/`clean` |
 | Library 5.3.0 | proposed: download progress |
-| pgembed 0.2 | MCP server; SQL executor split; `format`; `sql --check` summaries; download progress; JSON values in results (nested in JSON output, pretty in `\x`), relaxed JSON escaping, line breaks in Markdown cells; a pager; reading stops at the row cap; the performance work and budgets above |
+| pgembed 0.2 | built: MCP server; SQL executor split with streaming; `format`; `sql --check` summaries; JSON values in results (nested in JSON output, pretty in `\x`), relaxed JSON escaping, line breaks in Markdown cells; a pager; reading stops at the row cap; instance names validated. Open: see below |
 | pgembed 0.3 | web UI (`pgembed ui`), see below |
 | When there is demand | the backlog below |
 
 Scope is kept lean on purpose. 0.1 grew past the first plan (the prompt, `schema`, connection strings) because they were wanted while building it; the differentiators (several Postgres versions without Docker, including on machines and CI runners that cannot run Docker, and a throwaway real Postgres for AI assistants) come first, and the rest waits for real demand (issues, downloads, MCP usage).
+
+### 0.2: still open
+
+- **ReadyToRun packaging,** see Performance; the biggest remaining startup gain (about 40%).
+- **Download progress,** in the CLI and through MCP; needs library 5.3.
+- **Budgets in CI:** the benchmark project and end-to-end timings, and the prompt's debounce.
+- **The pager in a real terminal:** covered by tests through a pager command that writes a file; not yet tried by hand in a terminal with `less`.
 
 ### Backlog
 

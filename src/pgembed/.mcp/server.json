@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.mysticmind/pgembed",
+  "description": "Real PostgreSQL of any version, locally, with no Docker or install: start instances, run SQL, inspect schemas and plans.",
+  "version": "0.2.0",
+  "repository": {
+    "url": "https://github.com/mysticmind/pgembed-cli",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "nuget",
+      "registryBaseUrl": "https://api.nuget.org",
+      "identifier": "pgembed",
+      "version": "0.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}
