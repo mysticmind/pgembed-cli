@@ -14,8 +14,8 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
 {
     internal sealed class Settings : GlobalSettings
     {
-        [CommandArgument(0, "<TARGET>")]
-        [Description("An instance name, or a connection string: Npgsql, postgresql:// URI, libpq key=value or JDBC")]
+        [CommandArgument(0, "[TARGET]")]
+        [Description("An instance name, or a connection string: Npgsql, postgresql:// URI, libpq key=value or JDBC. Not needed with --check")]
         public string Target { get; set; } = "";
 
         [CommandArgument(1, "[SQL]")]
@@ -58,9 +58,17 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         [Description("Run statements that change the schema or existing rows without asking")]
         public bool Yes { get; set; }
 
-        public override ValidationResult Validate() =>
-            Format is null || SqlOutput.Formats.Contains(Format) ? ValidationResult.Success()
-            : ValidationResult.Error($"--format is one of: {string.Join(", ", SqlOutput.Formats)}");
+        public override ValidationResult Validate()
+        {
+            if (Format is not null && !SqlOutput.Formats.Contains(Format))
+            {
+                return ValidationResult.Error($"--format is one of: {string.Join(", ", SqlOutput.Formats)}");
+            }
+
+            return Target.Length == 0 && !Check
+                ? ValidationResult.Error("Give a target: an instance name or a connection string, for example: pgembed sql app \"SELECT 1\"")
+                : ValidationResult.Success();
+        }
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
@@ -80,7 +88,7 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         if (settings.Check)
         {
             // --check needs no server: in "sql --check '<sql>'" the one argument is the SQL, not a target
-            var checkedSql = settings.Sql is null && settings.File is null && IsSqlNotTarget(cli, settings.Target)
+            var checkedSql = settings.Sql is null && settings.File is null && settings.Target.Length > 0 && IsSqlNotTarget(cli, settings.Target)
                 ? settings.Target
                 : await ReadSqlAsync(settings, ct);
             return string.IsNullOrWhiteSpace(checkedSql)

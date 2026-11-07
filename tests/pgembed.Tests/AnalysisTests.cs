@@ -202,3 +202,27 @@ public class FastPathTests
     public void Sends_anything_that_might_change_data_to_the_full_classification(string statement) =>
         Assert.False(SqlSafety.IsPlainRead(statement));
 }
+
+public class CheckWithoutTargetTests : IDisposable
+{
+    private readonly string _file = Path.Combine(Path.GetTempPath(), $"check-{Guid.NewGuid():N}.sql");
+
+    public void Dispose() => File.Delete(_file);
+
+    [Fact]
+    public async Task Check_reads_a_file_without_a_target()
+    {
+        await File.WriteAllTextAsync(_file, "SELECT 1; DELETE FROM t", TestContext.Current.CancellationToken);
+        var run = await TestCli.RunAsync("sql", "--check", "-f", _file);
+        Assert.True(run.ExitCode == 0, run.All);
+        Assert.Contains("2 statements", run.Console);
+    }
+
+    [Fact]
+    public async Task Running_sql_still_needs_a_target()
+    {
+        var run = await TestCli.RunAsync("sql");
+        Assert.Equal(2, run.ExitCode);
+        Assert.Contains("Give a target", run.All);
+    }
+}

@@ -136,7 +136,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
 
     [McpServerTool(Name = "stop_instance", Idempotent = true)]
     [Description("Stop a running instance cleanly. Its data is kept; start_instance starts it again.")]
-    public async Task<object> StopInstance(string name, CancellationToken ct = default)
+    public async Task<object> StopInstance([Description("Instance name, as list_instances shows it")] string name, CancellationToken ct = default)
     {
         RequireInstance(name);
         var stopped = await cli.Instances.StopAsync(name, ct);
@@ -145,7 +145,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
 
     [McpServerTool(Name = "restart_instance")]
     [Description("Stop an instance and start it again with the same version, port and settings.")]
-    public async Task<object> RestartInstance(string name, CancellationToken ct = default)
+    public async Task<object> RestartInstance([Description("Instance name, as list_instances shows it")] string name, CancellationToken ct = default)
     {
         RequireInstance(name);
         await cli.Instances.StopAsync(name, ct);
@@ -155,7 +155,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     [McpServerTool(Name = "kill_instance", Destructive = true)]
     [Description("Force-kill an instance's server processes, as a last resort when stop_instance does not work. Asks for confirmation.")]
     public async Task<CallToolResult> KillInstance(
-        McpServer server, string name,
+        McpServer server, [Description("Instance name, as list_instances shows it")] string name,
         [Description("Set to true, after the user agreed, when the client cannot ask the user itself")] bool confirm = false,
         CancellationToken ct = default)
     {
@@ -172,7 +172,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     [McpServerTool(Name = "remove_instance", Destructive = true)]
     [Description("Delete an instance and all of its data, stopping it first if it runs. Asks for confirmation.")]
     public async Task<CallToolResult> RemoveInstance(
-        McpServer server, string name,
+        McpServer server, [Description("Instance name, as list_instances shows it")] string name,
         [Description("Set to true, after the user agreed, when the client cannot ask the user itself")] bool confirm = false,
         CancellationToken ct = default)
     {
@@ -189,7 +189,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     [McpServerTool(Name = "get_connection_string", ReadOnly = true, Idempotent = true)]
     [Description("The connection string of a running instance.")]
     public async Task<object> GetConnectionString(
-        string name,
+        [Description("Instance name, as list_instances shows it")] string name,
         [Description("npgsql (default), uri, libpq, jdbc or env")] string format = "npgsql",
         [Description("Database (default: postgres)")] string? database = null,
         [Description("Schema for unqualified names (sets the search path)")] string? schema = null,
@@ -202,7 +202,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
 
     [McpServerTool(Name = "get_logs", ReadOnly = true, Idempotent = true)]
     [Description("The last lines of an instance's server log: startup messages, errors, slow statements.")]
-    public object GetLogs(string name, [Description("Lines from the end (default 50, at most 1000)")] int lines = 50)
+    public object GetLogs([Description("Instance name, as list_instances shows it")] string name, [Description("Lines from the end (default 50, at most 1000)")] int lines = 50)
     {
         RequireInstance(name);
         var file = cli.Instances.LogFile(name);
@@ -212,7 +212,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
 
     [McpServerTool(Name = "doctor", ReadOnly = true, Idempotent = true)]
     [Description("Check that PostgreSQL can run on this machine: platform, user, Maven reachable, cache writable, folder usable, port free.")]
-    public async Task<object> Doctor([Description("Port to check (default 5432)")] int port = 5432, CancellationToken ct = default)
+    public async Task<object> Doctor([Description("Port to check is free (default 5432)")] int port = 5432, CancellationToken ct = default)
     {
         var checks = await DoctorCommand.RunChecksAsync(cli, null, port, ct);
         return new
@@ -286,11 +286,11 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     [McpServerTool(Name = "check_sql", ReadOnly = true, Idempotent = true)]
     [Description("Check SQL syntax without a server, and summarize each statement: its kind, the tables it reads, writes or defines, " +
                  "the functions it calls, and whether run_sql would ask for confirmation.")]
-    public object CheckSql(string sql) => SqlAnalysis.Check(sql);
+    public object CheckSql([Description("SQL: one or more statements")] string sql) => SqlAnalysis.Check(sql);
 
     [McpServerTool(Name = "format_sql", ReadOnly = true, Idempotent = true)]
     [Description("Format SQL with the PostgreSQL parser, keeping comments. No server needed.")]
-    public object FormatSql(string sql)
+    public object FormatSql([Description("SQL: one or more statements; comments are kept")] string sql)
     {
         var (formatted, error) = SqlAnalysis.Format(sql);
         return error is null ? new { formatted } : throw new McpException(SyntaxMessage(sql, error));
