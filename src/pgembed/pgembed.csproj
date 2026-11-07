@@ -48,6 +48,7 @@
     <None Include="..\..\assets\icon.png" Pack="true" PackagePath="\" />
     <None Include=".mcp\server.json" Pack="true" PackagePath="\.mcp\" />
     <InternalsVisibleTo Include="pgembed.Tests" />
+    <InternalsVisibleTo Include="pgembed.Benchmarks" />
   </ItemGroup>
 
   <ItemGroup>

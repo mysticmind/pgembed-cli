@@ -42,6 +42,28 @@ jobs:
       - name: Pack the tool
         run: dotnet pack src/pgembed/pgembed.csproj -c Release -o artifacts
 
+  # Performance budgets (SPEC.md, Performance), end to end with a ReadyToRun build as it ships. The budgets are
+  # set on a developer machine; shared runners are slower and noisier, hence the tolerance. The report goes to
+  # the job summary.
+  budgets:
+    name: Performance budgets (Linux x64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          dotnet-version: 10.0.x
+
+      - name: Publish as shipped (ReadyToRun, linux-x64)
+        run: dotnet publish src/pgembed/pgembed.csproj -c Release -r linux-x64 -o publish
+
+      - name: Check the budgets
+        run: python3 bench/budgets.py ./publish/pgembed --tolerance 2.5
+
   test-alpine:
     name: Alpine x64 (net11.0)
     runs-on: ubuntu-latest

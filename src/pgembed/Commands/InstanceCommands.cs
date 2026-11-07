@@ -291,14 +291,24 @@ internal sealed class ConnStrCommand(CliServices services) : AsyncCommand<ConnSt
         var cli = new CliContext(settings, services);
         if (!cli.Instances.Exists(settings.Name)) throw new PostgresEmbedException($"There is no instance named '{settings.Name}'.");
 
-        var view = await cli.Instances.ViewAsync(settings.Name, ct);
-        var port = view.Port ?? throw new PostgresEmbedException($"'{settings.Name}' has no known port yet: start it once with pgembed start {settings.Name}");
+        // the port from postmaster.pid when running; otherwise the full status, or the remembered port
+        var runningPort = cli.Instances.RunningPort(settings.Name);
+        var running = runningPort is not null;
+        if (!running)
+        {
+            var status = await cli.Instances.StatusAsync(settings.Name, ct);
+            running = status.State != PgInstanceState.Stopped;
+            runningPort = status.Port;
+        }
+
+        var port = runningPort ?? cli.Registry.Get(settings.Name)?.Port
+                   ?? throw new PostgresEmbedException($"'{settings.Name}' has no known port yet: start it once with pgembed start {settings.Name}");
         string Format(string format) => Connections.Format(format, port, settings.Database, settings.Schema);
 
         if (settings.Json)
         {
             var formats = Connections.FormatNames.ToDictionary(f => f, Format);
-            cli.WriteJson(new { name = settings.Name, port, running = view.Status.State != PgInstanceState.Stopped, formats });
+            cli.WriteJson(new { name = settings.Name, port, running, formats });
             return 0;
         }
 
@@ -311,7 +321,7 @@ internal sealed class ConnStrCommand(CliServices services) : AsyncCommand<ConnSt
         var grid = new Grid().AddColumn(new GridColumn().NoWrap().PadRight(2)).AddColumn();
         foreach (var format in Connections.FormatNames) grid.AddRow(new Markup($"[dim]{format}[/]"), new Text(Format(format)));
         cli.Console.Write(grid);
-        if (view.Status.State == PgInstanceState.Stopped)
+        if (!running)
         {
             cli.Console.MarkupLineInterpolated($"[dim]{settings.Name} is stopped; start it with: pgembed start {settings.Name}[/]");
         }

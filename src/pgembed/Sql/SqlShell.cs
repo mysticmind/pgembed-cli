@@ -27,6 +27,8 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
 
     public async Task<int> RunAsync(ILineReader reader, CancellationToken ct)
     {
+        // the parser's first use costs about 90 ms; pay it while connecting, not on the first keystroke
+        _ = Task.Run(() => PgSqlParser.Parser.Parse("SELECT 1"), CancellationToken.None);
         await ConnectAsync(ct);
         cli.Console.MarkupLineInterpolated(
             $"Connected to [bold]{label}[/], database [bold]{Database}[/] (PostgreSQL {_connection!.PostgreSqlVersion}). [dim]\\? for help, \\q to quit.[/]");
