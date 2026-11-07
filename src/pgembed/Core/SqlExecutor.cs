@@ -32,6 +32,9 @@ internal interface IResultSink
     void Row(object?[] values);
     void End(StatementSummary summary);
     void Fail(StatementError error);
+
+    /// <summary>True once nobody reads the output any more (the user left the pager): the rest is not read.</summary>
+    bool Abandoned => false;
 }
 
 /// <summary>
@@ -115,7 +118,7 @@ internal static class SqlExecutor
 
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        if (rows >= maxRows)
+                        if (rows >= maxRows || sink.Abandoned)
                         {
                             truncated = true;
                             if (session is not { InTransaction: true })

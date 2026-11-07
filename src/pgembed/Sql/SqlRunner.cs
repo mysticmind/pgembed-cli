@@ -105,6 +105,8 @@ internal sealed class SqlRunner
             runner.Error = error;
             inner.Fail(error);
         }
+
+        public bool Abandoned => inner.Abandoned;
     }
 }
 

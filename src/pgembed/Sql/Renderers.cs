@@ -176,6 +176,8 @@ internal sealed class AlignedRenderer(IAnsiConsole terminal, TextWriter output, 
 
     private TextWriter Target => _pager?.Writer ?? Output;
 
+    public bool Abandoned => _pagerClosed;
+
     public override void Begin(string statement, string? title, IReadOnlyList<SqlColumn> columns)
     {
         _title = title;
