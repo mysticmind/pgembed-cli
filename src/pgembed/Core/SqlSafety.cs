@@ -7,10 +7,13 @@ namespace PgEmbed.Cli.Core;
 internal sealed record SqlChange(string Statement, string What, bool EveryRow);
 
 /// <summary>
-/// Finds the statements in a script that need confirming before they run: schema changes (DDL,
-/// TRUNCATE, SELECT INTO) and changes to existing rows (UPDATE, DELETE, MERGE, data-modifying CTEs).
-/// Reads and INSERT run without asking. A statement the parser cannot read is listed too, since
-/// nothing can be said about it.
+/// Finds the statements in a script that need confirming before they run: schema changes (DDL, TRUNCATE,
+/// SELECT INTO), changes to existing rows (UPDATE, DELETE, MERGE, data-modifying CTEs), and anything that
+/// reaches outside the database or cannot be checked: code (DO, CALL, EXECUTE of a prepared statement),
+/// libraries (LOAD), programs and files on this machine (COPY PROGRAM, COPY to or from a file, and the
+/// built-in functions that read or write files, connect elsewhere or control the server). An instance runs
+/// as you, with a superuser, so these act with your permissions. Reads and INSERT run without asking. A
+/// statement the parser cannot read is listed too, since nothing can be said about it.
 /// </summary>
 internal static class SqlSafety
 {
@@ -31,9 +34,48 @@ internal static class SqlSafety
             {
                 if (Describe(info) is { } change) changes.Add(change with { Statement = statement });
             }
+
+            foreach (var function in FunctionsIn(statement))
+            {
+                if (ServerAccess.TryGetValue(function, out var what)) changes.Add(new SqlChange(statement, $"{what} ({function})", false));
+            }
         }
 
         return changes;
+    }
+
+    /// <summary>
+    /// Built-in functions that reach outside the database or run SQL that cannot be checked, by what they do.
+    /// Functions you define are not looked into; a superuser can do anything through them.
+    /// </summary>
+    internal static readonly Dictionary<string, string> ServerAccess = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["pg_read_file"] = "reads files on this machine", ["pg_read_binary_file"] = "reads files on this machine",
+        ["pg_ls_dir"] = "lists folders on this machine", ["pg_stat_file"] = "reads files on this machine",
+        ["pg_ls_logdir"] = "lists folders on this machine", ["pg_ls_waldir"] = "lists folders on this machine",
+        ["pg_ls_tmpdir"] = "lists folders on this machine", ["pg_ls_archive_statusdir"] = "lists folders on this machine",
+        ["pg_ls_logicalsnapdir"] = "lists folders on this machine", ["pg_ls_logicalmapdir"] = "lists folders on this machine",
+        ["pg_ls_replslotdir"] = "lists folders on this machine", ["pg_logdir_ls"] = "lists folders on this machine",
+        ["lo_import"] = "reads files on this machine", ["lo_export"] = "writes files on this machine",
+        ["pg_file_write"] = "writes files on this machine", ["pg_file_rename"] = "writes files on this machine",
+        ["pg_file_unlink"] = "deletes files on this machine", ["pg_file_sync"] = "writes files on this machine",
+        ["dblink"] = "connects to another server", ["dblink_exec"] = "connects to another server",
+        ["dblink_connect"] = "connects to another server", ["dblink_connect_u"] = "connects to another server",
+        ["dblink_send_query"] = "connects to another server", ["dblink_open"] = "connects to another server",
+        ["pg_terminate_backend"] = "controls the server", ["pg_cancel_backend"] = "controls the server",
+        ["pg_signal_backend"] = "controls the server", ["pg_reload_conf"] = "controls the server",
+        ["pg_rotate_logfile"] = "controls the server", ["pg_promote"] = "controls the server",
+        ["pg_switch_wal"] = "controls the server", ["pg_create_restore_point"] = "controls the server",
+        ["query_to_xml"] = "runs SQL given as text, which cannot be checked",
+        ["query_to_xmlschema"] = "runs SQL given as text, which cannot be checked",
+        ["query_to_xml_and_xmlschema"] = "runs SQL given as text, which cannot be checked",
+        ["ts_stat"] = "runs SQL given as text, which cannot be checked",
+    };
+
+    private static IEnumerable<string> FunctionsIn(string statement)
+    {
+        var summary = Parser.Summary(statement, new ParserOptions(), -1);
+        return summary.IsSuccess ? summary.Value.Functions.Select(f => f.FunctionName is { Length: > 0 } name ? name : f.Name).Distinct() : [];
     }
 
     // keywords that can start a statement which changes nothing (INSERT adds rows but does not ask)
@@ -65,6 +107,9 @@ internal static class SqlSafety
             var token = tokens[i].Token;
             if (token == Token.Into && first == Token.Insert && i == 1) continue; // INSERT INTO
             if (Risky.Contains(token)) return false;
+
+            // a name of a function that reaches outside the database: let the full check describe it
+            if (token is Token.Ident or Token.Sconst && ServerAccess.ContainsKey(statement[tokens[i].Start..tokens[i].End].Trim('"'))) return false;
         }
 
         return true;
@@ -87,6 +132,13 @@ internal static class SqlSafety
                 continue;
             }
 
+            // everything that would ask first in normal mode is refused here
+            if (Changes([statement]).FirstOrDefault() is { } change)
+            {
+                violations.Add(change);
+                continue;
+            }
+
             foreach (var info in classified.Value)
             {
                 var reason = info.Kind switch
@@ -104,6 +156,11 @@ internal static class SqlSafety
                     break;
                 }
             }
+
+            if (violations.LastOrDefault()?.Statement != statement && FunctionsIn(statement).FirstOrDefault(f => f.Equals("set_config", StringComparison.OrdinalIgnoreCase)) is { } setter)
+            {
+                violations.Add(new SqlChange(statement, $"changes a setting ({setter})", false));
+            }
         }
 
         return violations;
@@ -120,6 +177,7 @@ internal static class SqlSafety
         };
 
         if (set is null) return false;
+        if (set.Kind == VariableSetKind.VarResetAll) return true; // RESET ALL resets the role too
         var name = set.Name ?? "";
         return name.Contains("transaction", StringComparison.OrdinalIgnoreCase)
                || name.Contains("session", StringComparison.OrdinalIgnoreCase)
@@ -146,6 +204,24 @@ internal static class SqlSafety
                     : new SqlChange("", $"updates rows of {Table(update.Relation)}", false);
             case StatementKind.Merge:
                 return new SqlChange("", "changes rows (MERGE)", false);
+            case StatementKind.Call:
+                return Is(info.Node, n => n.DoStmt) is not null || info.Node is DoStmt
+                    ? new SqlChange("", "runs code on the server (DO), which cannot be checked", false)
+                    : new SqlChange("", "calls a procedure, which cannot be checked", false);
+            case StatementKind.Prepared when info.Node is ExecuteStmt || Is(info.Node, n => n.ExecuteStmt) is not null:
+                return new SqlChange("", "runs a prepared statement, which cannot be checked", false);
+            case StatementKind.Session when info.Node is LoadStmt || Is(info.Node, n => n.LoadStmt) is not null:
+                return new SqlChange("", "loads a library into the server (LOAD)", false);
+            case StatementKind.Copy when !info.RunsProgram:
+                var copy = info.Node as CopyStmt ?? Is(info.Node, n => n.CopyStmt);
+                if (copy is { Filename.Length: > 0 })
+                {
+                    return copy.IsFrom
+                        ? new SqlChange("", "reads a file on this machine (COPY FROM)", false)
+                        : new SqlChange("", "writes a file on this machine (COPY TO)", false);
+                }
+
+                break;
         }
 
         if (info.HasSelectInto) return new SqlChange("", "creates a table (SELECT INTO)", false);
@@ -155,6 +231,8 @@ internal static class SqlSafety
         if (info.ExecutesInner && info.Inner is { } inner) return Describe(inner);
         return null;
     }
+
+    private static T? Is<T>(IMessage? node, Func<Node, T?> pick) where T : class => node is Node wrapper ? pick(wrapper) : null;
 
     private static T? Unwrap<T>(IMessage? node) where T : class, IMessage => node switch
     {

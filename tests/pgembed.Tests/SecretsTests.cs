@@ -67,3 +67,52 @@ public class SecretsTests
         Assert.DoesNotContain(Secret, run.All);
     }
 }
+
+/// <summary>What reaches outside the database, or cannot be checked, asks first; read-only mode refuses it.</summary>
+public class ServerAccessTests
+{
+    [Theory]
+    [InlineData("DO $$ BEGIN PERFORM 1; END $$", "runs code on the server")]
+    [InlineData("CALL cleanup()", "calls a procedure")]
+    [InlineData("EXECUTE wipe", "runs a prepared statement")]
+    [InlineData("LOAD 'plugin'", "loads a library")]
+    [InlineData("COPY books TO '/tmp/books.csv'", "writes a file on this machine")]
+    [InlineData("COPY books FROM '/tmp/books.csv'", "reads a file on this machine")]
+    [InlineData("COPY books TO PROGRAM 'cat'", "runs a program")]
+    [InlineData("SELECT pg_read_file('/etc/passwd')", "reads files on this machine")]
+    [InlineData("SELECT pg_catalog.pg_read_binary_file('x')", "reads files on this machine")]
+    [InlineData("SELECT lo_export(1, '/tmp/x')", "writes files on this machine")]
+    [InlineData("SELECT * FROM dblink('host=x', 'SELECT 1') AS t(a int)", "connects to another server")]
+    [InlineData("SELECT pg_terminate_backend(42)", "controls the server")]
+    [InlineData("SELECT query_to_xml('DELETE FROM t', true, false, '')", "runs SQL given as text")]
+    public void Asks_first_and_is_refused_read_only(string sql, string what)
+    {
+        Assert.Contains(SqlSafety.Changes([sql]), c => c.What.Contains(what));
+        Assert.Contains(SqlSafety.ReadOnlyViolations([sql]), c => c.What.Contains(what));
+    }
+
+    [Theory]
+    [InlineData("SELECT * FROM books")]
+    [InlineData("COPY (SELECT 1) TO STDOUT")]
+    [InlineData("INSERT INTO books VALUES (1)")]
+    [InlineData("VACUUM books")]
+    [InlineData("SET work_mem = '64MB'")]
+    [InlineData("SELECT 'pg_read_file' AS just_text")]
+    public void Ordinary_statements_do_not_ask(string sql) => Assert.Empty(SqlSafety.Changes([sql]));
+
+    [Theory]
+    [InlineData("RESET ALL", "transaction or session mode")]
+    [InlineData("RESET ROLE", "transaction or session mode")]
+    [InlineData("SELECT set_config('statement_timeout', '0', false)", "changes a setting")]
+    public void Read_only_also_refuses_changes_to_the_session(string sql, string what) =>
+        Assert.Contains(SqlSafety.ReadOnlyViolations([sql]), c => c.What.Contains(what));
+
+    [Fact]
+    public async Task Sql_without_a_terminal_refuses_file_access_unless_yes()
+    {
+        var run = await TestCli.RunAsync("sql", "postgresql://localhost:1/x", "SELECT pg_read_file('/etc/passwd')");
+        Assert.Equal(1, run.ExitCode);
+        Assert.Contains("reads files on this machine", run.All);
+        Assert.Contains("Nothing was run", run.All);
+    }
+}

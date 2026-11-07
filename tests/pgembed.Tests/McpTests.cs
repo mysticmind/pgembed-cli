@@ -195,6 +195,37 @@ public class McpTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Read_only_and_explain_cannot_reach_files_or_escape()
+    {
+        var client = await ConnectAsync(new McpPolicy(false, NoConfirm: true, false));
+        Assert.True((await Call(client, "start_instance", new() { ["name"] = _name, ["version"] = "17", ["port"] = 0 })).IsError != true);
+        var setup = await Call(client, "run_sql", new()
+        {
+            ["target"] = _name,
+            ["sql"] = "CREATE TABLE books(id int); CREATE FUNCTION config() RETURNS text AS $$ SELECT pg_read_file('postgresql.conf') $$ LANGUAGE sql"
+        });
+        Assert.True(setup.IsError != true, Text(setup));
+
+        // the statement check refuses file access in read-only mode
+        var direct = await Call(client, "run_sql", new() { ["target"] = _name, ["sql"] = "SELECT pg_read_file('postgresql.conf')", ["read_only"] = true });
+        Assert.True(direct.IsError);
+        Assert.Contains("reads files on this machine", Text(direct));
+
+        // a function hides it from the check; the server still refuses, since read-only runs as pg_read_all_data
+        var hidden = await Call(client, "run_sql", new() { ["target"] = _name, ["sql"] = "SELECT config()", ["read_only"] = true });
+        Assert.True(hidden.IsError);
+        Assert.Contains("permission denied", Text(hidden));
+        var tables = await Call(client, "run_sql", new() { ["target"] = _name, ["sql"] = "SELECT count(*) FROM books", ["read_only"] = true });
+        Assert.True(tables.IsError != true, Text(tables)); // and it still reads every table
+
+        // SQL the parser cannot read never reaches EXPLAIN as a batch: the COMMIT would end the rolled-back transaction
+        var escape = await Call(client, "explain_query", new() { ["target"] = _name, ["sql"] = "SELECT 1; COMMIT; DROP TABLE books; SELEC" });
+        Assert.True(escape.IsError);
+        var still = await Call(client, "run_sql", new() { ["target"] = _name, ["sql"] = "SELECT count(*) FROM books" });
+        Assert.True(still.IsError != true, Text(still));
+    }
+
+    [Fact]
     public async Task A_read_only_server_refuses_every_write()
     {
         var client = await ConnectAsync(new McpPolicy(ReadOnly: true, false, false));

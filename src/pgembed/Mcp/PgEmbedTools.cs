@@ -258,11 +258,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         var collector = new CollectingSink(Math.Clamp(max_rows, 1, MaxMaxRows));
         await using var connection = await OpenAsync(target, database, schema, ct);
         await using var transaction = readOnly ? await connection.BeginTransactionAsync(ct) : null;
-        if (transaction is not null)
-        {
-            await using var setReadOnly = new NpgsqlCommand("SET TRANSACTION READ ONLY", connection, transaction);
-            await setReadOnly.ExecuteNonQueryAsync(ct);
-        }
+        if (transaction is not null) await RestrictAsync(connection, transaction, ct);
 
         foreach (var statement in statements)
         {
@@ -298,7 +294,12 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         CancellationToken ct = default)
     {
         var statements = SqlRunner.Split(sql);
-        if (statements.Count != 1) return Error("explain_query takes one statement.");
+        // the statement goes inside EXPLAIN as text, so it must be exactly one statement the parser reads: SQL it
+        // cannot read would reach the server as a batch, and a COMMIT in it would end the rolled-back transaction
+        if (statements.Count != 1 || PgSqlParser.Parser.SplitWithParser(sql) is not { IsSuccess: true } split || split.Value.Statements.Count != 1)
+        {
+            return Error("explain_query takes one statement that the PostgreSQL parser can read.");
+        }
         var readOnly = policy.ReadOnly || IsExternal(target) && !policy.AllowExternalWrites;
         if (analyze && readOnly && SqlSafety.ReadOnlyViolations(statements) is { Count: > 0 } violations)
         {
@@ -307,11 +308,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
 
         await using var connection = await OpenAsync(target, database, schema, ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
-        if (readOnly)
-        {
-            await using var setReadOnly = new NpgsqlCommand("SET TRANSACTION READ ONLY", connection, transaction);
-            await setReadOnly.ExecuteNonQueryAsync(ct);
-        }
+        if (readOnly) await RestrictAsync(connection, transaction, ct);
 
         var options = analyze ? "FORMAT JSON, ANALYZE, BUFFERS" : "FORMAT JSON";
         try
@@ -363,6 +360,28 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     }
 
     // ---------- helpers ----------
+
+    /// <summary>
+    /// Read-only mode, enforced by the server: the transaction is read-only and, on PostgreSQL 14 and later when
+    /// connected as a superuser (as to a pgembed instance), runs as the built-in pg_read_all_data role, which
+    /// reads every table but cannot read or write files, run programs or load libraries. That holds even for
+    /// what the statement check cannot see, such as functions. The role lasts until the transaction ends.
+    /// </summary>
+    private static async Task RestrictAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CancellationToken ct)
+    {
+        await using (var readOnly = new NpgsqlCommand("SET TRANSACTION READ ONLY", connection, transaction))
+        {
+            await readOnly.ExecuteNonQueryAsync(ct);
+        }
+
+        if (connection.PostgreSqlVersion.Major < 14) return;
+        await using var check = new NpgsqlCommand("SELECT current_setting('is_superuser') = 'on'", connection, transaction);
+        if (await check.ExecuteScalarAsync(ct) is true)
+        {
+            await using var role = new NpgsqlCommand("SET LOCAL ROLE pg_read_all_data", connection, transaction);
+            await role.ExecuteNonQueryAsync(ct);
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {
