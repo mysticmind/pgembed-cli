@@ -1,0 +1,23 @@
+DESCRIPTION:
+Run an MCP server over standard input and output, for AI assistants
+
+USAGE:
+    pgembed mcp [OPTIONS]
+
+EXAMPLES:
+    pgembed mcp
+    pgembed mcp --read-only
+
+OPTIONS:
+    -h, --help                     Prints help information
+        --cache-dir <PATH>         Cache folder for downloads and instances (default:
+                                   PGEMBED_CACHE_DIR, else the per-user cache folder)
+        --maven-repo <URL>         Maven repository or mirror with the Postgres binaries (default:
+                                   Maven Central, or PGEMBED_MAVEN_REPO)
+        --json                     Machine-readable output
+        --verbose                  Log details to standard error
+        --read-only                Refuse anything that writes, on every target
+        --no-confirm               Run changes, kills and removals without asking (for sandboxes and
+                                   throwaway agents)
+        --allow-external-writes    Allow writes to servers pgembed did not start (connection-string
+                                   targets); read-only otherwise

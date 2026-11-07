@@ -1,0 +1,14 @@
+DESCRIPTION:
+Cached installs and downloads, with sizes
+
+USAGE:
+    pgembed cache list [OPTIONS]
+
+OPTIONS:
+    -h, --help                Prints help information
+        --cache-dir <PATH>    Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR,
+                              else the per-user cache folder)
+        --maven-repo <URL>    Maven repository or mirror with the Postgres binaries (default: Maven
+                              Central, or PGEMBED_MAVEN_REPO)
+        --json                Machine-readable output
+        --verbose             Log details to standard error

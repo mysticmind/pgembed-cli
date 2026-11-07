@@ -1,0 +1,38 @@
+DESCRIPTION:
+Run SQL against an instance and show the results
+
+USAGE:
+    pgembed sql [TARGET] [SQL] [OPTIONS]
+
+EXAMPLES:
+    pgembed sql app SELECT version()
+    pgembed sql app -f seed.sql
+
+ARGUMENTS:
+    [TARGET]    An instance name, or a connection string: Npgsql, postgresql:// URI, libpq key=value
+                or JDBC. Not needed with --check
+    [SQL]       SQL to run; or use -f, or pipe it in. Without any, opens an interactive prompt
+
+OPTIONS:
+    -h, --help                Prints help information
+        --cache-dir <PATH>    Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR,
+                              else the per-user cache folder)
+        --maven-repo <URL>    Maven repository or mirror with the Postgres binaries (default: Maven
+                              Central, or PGEMBED_MAVEN_REPO)
+        --json                Machine-readable output
+        --verbose             Log details to standard error
+    -f, --file <PATH>         Run a SQL file
+        --db <DATABASE>       Database (default: postgres for an instance, else the connection
+                              string's)
+        --schema <SCHEMA>     Schema for unqualified names (sets the search path)
+        --format <FORMAT>     table (fits the terminal; the default there), aligned (psql-style, one
+                              row per line; the default when output is redirected), json, csv or
+                              markdown
+        --max-rows <N>        Rows shown per result in table format (default: 500); other formats
+                              return all
+        --timing              Show how long each statement took
+        --check               Check the syntax and summarize each statement (tables, functions,
+                              whether it asks first); needs no server
+        --no-pager            Never open a pager (default: a result taller than the terminal opens
+                              in PGEMBED_PAGER, PAGER or less -SFX)
+    -y, --yes                 Run statements that change the schema or existing rows without asking

@@ -1,0 +1,44 @@
+# Samples for docs/guide/ci.md: pgembed in a GitHub Actions job.
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      # region sample_ci_cache
+      # Postgres downloads once per version, then comes from the cache
+      - name: Cache Postgres binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pgembed/binaries
+          key: pgembed-${{ runner.os }}-${{ runner.arch }}-pg17
+      # endregion
+
+      # region sample_ci_start
+      - name: Start Postgres
+        run: |
+          dotnet tool install --global pgembed
+          pgembed start app --version 17
+          echo "ConnectionStrings__App=$(pgembed connstr app --format npgsql)" >> "$GITHUB_ENV"
+      # endregion
+
+      # region sample_ci_test
+      # tests using InstanceName = "app" attach to it; anything else reads ConnectionStrings__App
+      - name: Test
+        run: dotnet test
+      # endregion
+
+      # region sample_ci_versions
+      - name: Test on every supported major
+        run: |
+          pgembed start ci --version 16,17,18
+          dotnet test --filter "Category=EveryVersion"
+      # endregion

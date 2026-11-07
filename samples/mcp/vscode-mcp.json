@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "pgembed": {
+      "type": "stdio",
+      "command": "dnx",
+      "args": ["pgembed", "mcp"]
+    }
+  }
+}

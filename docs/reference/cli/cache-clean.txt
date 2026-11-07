@@ -1,0 +1,15 @@
+DESCRIPTION:
+Remove cached versions (never ones in use)
+
+USAGE:
+    pgembed cache clean [OPTIONS]
+
+EXAMPLES:
+    pgembed cache clean --keep-latest
+
+OPTIONS:
+    -h, --help              Prints help information
+        --keep-latest       Keep only the newest version of each major
+        --version <SPEC>    Remove one version or major, for example 15 or 16.4.0
+        --all               Remove everything that is not in use
+        --dry-run           Only show what would be removed

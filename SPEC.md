@@ -88,6 +88,7 @@ The first budgets (70 ms for commands that touch neither Postgres nor the networ
 | Versioning | independent of the library, starting at 0.1.0 |
 | Library reference | `MysticMind.PostgresEmbed` `[5.2.1, 6.0.0)` (5.2 adds what pgembed needs, see below; 5.2.1 fixes shared memory after a kill) |
 | Publishing | NuGet trusted publishing, policy for repository `pgembed-cli`, workflow `publish.yaml` |
+| Docs site | VitePress on GitHub Pages ([mysticmind.github.io/pgembed-cli](https://mysticmind.github.io/pgembed-cli/)), deployed by `deploy-docs.yml` on a manual run. Every code sample comes from `samples/` as a region snippet: shell scripts CI runs (`samples/run-cli-samples.sh`), a C# xUnit project CI runs, and config files. The command and MCP tool references are generated from the code, and `DocsTests` fails when they are out of date (`PGEMBED_UPDATE_DOCS=1` rewrites them) |
 | Dependencies | Spectre.Console and Spectre.Console.Cli (commands and output), Npgsql (SQL), [pgsqlparser](https://github.com/mysticmind/pgsqlparser-dotnet) (formatting, splitting, syntax checks, classification, summaries), PrettyPrompt 6 (the interactive prompt's line editor); from pgembed 0.2, the ModelContextProtocol C# SDK 1.x (`ModelContextProtocol.Core`, without the hosting package) |
 
 ## Architecture

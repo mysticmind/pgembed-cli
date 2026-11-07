@@ -36,9 +36,12 @@ internal static class TestCli
     /// <summary>As if standard output went to a file or pipe.</summary>
     public static Task<CliRun> RunRedirectedAsync(params string[] args) => RunAsync(null, true, args);
 
-    private static async Task<CliRun> RunAsync(HttpMessageHandler? handler, bool redirected, string[] args)
+    /// <summary>With a console of the given width, as for the help text the docs show.</summary>
+    public static Task<CliRun> RunWithWidthAsync(int width, params string[] args) => RunAsync(null, false, args, width);
+
+    private static async Task<CliRun> RunAsync(HttpMessageHandler? handler, bool redirected, string[] args, int width = 250)
     {
-        var console = new TestConsole().Width(250);
+        var console = new TestConsole().Width(width);
         var output = new StringWriter();
         var error = new StringWriter();
         using var http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);

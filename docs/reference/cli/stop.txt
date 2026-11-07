@@ -1,0 +1,22 @@
+DESCRIPTION:
+Stop instances cleanly
+
+USAGE:
+    pgembed stop [NAMES] [OPTIONS]
+
+EXAMPLES:
+    pgembed stop app
+    pgembed stop --all
+
+ARGUMENTS:
+    [NAMES]    Instance names; * and ? match several, for example ci-*
+
+OPTIONS:
+    -h, --help                Prints help information
+        --cache-dir <PATH>    Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR,
+                              else the per-user cache folder)
+        --maven-repo <URL>    Maven repository or mirror with the Postgres binaries (default: Maven
+                              Central, or PGEMBED_MAVEN_REPO)
+        --json                Machine-readable output
+        --verbose             Log details to standard error
+        --all                 Every instance

@@ -17,6 +17,8 @@ $ pgembed sql app "SELECT version()"
 $ pgembed stop app
 ```
 
+**Documentation: [mysticmind.github.io/pgembed-cli](https://mysticmind.github.io/pgembed-cli/)**
+
 It is a .NET tool built on [MysticMind.PostgresEmbed](https://github.com/mysticmind/mysticmind-postgresembed),
 and shares that library's download cache: a version installed by `pgembed` is not downloaded again
 by your tests, and the other way round.
