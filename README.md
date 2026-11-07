@@ -23,11 +23,15 @@ by your tests, and the other way round.
 
 ## Install
 
-Needs .NET 8 or newer.
+Needs the .NET 10 SDK or newer.
 
 ```console
 dotnet tool install --global pgembed
+dnx pgembed status                      # or run it without installing
 ```
+
+The package is precompiled for each platform (Windows x64, Linux x64 and arm64 with glibc or
+musl, macOS x64 and arm64), so commands start quickly; other platforms get a portable build.
 
 ## Instances
 
@@ -58,6 +62,7 @@ pgembed rm app                          # deletes the data, after asking; --forc
 | `-p, --port` | Port; default 5432 when free, otherwise any free port. Kept for later starts |
 | `--param KEY=VALUE` | A server setting, such as `--param shared_buffers=256MB`. Repeatable |
 | `--extension URL` | An extension zip to install; add `#sha256=<hex>` to verify it. Repeatable |
+| `--locale` | Locale for a new instance's data; default `en_US.UTF-8`, or `C.UTF-8` on Linux systems without it |
 | `--foreground` | Stay attached to the terminal instead of running in the background |
 
 An instance keeps its major version: its data folder can only be opened by that major. To move
@@ -250,6 +255,8 @@ pgembed doctor                          # platform, user, Maven, cache folder, p
 | `--cache-dir` | Cache folder (default `PGEMBED_CACHE_DIR`, else the per-user cache folder) |
 | `--maven-repo` | A Maven mirror (default Maven Central, or `PGEMBED_MAVEN_REPO`) |
 | `--verbose` | Log details to standard error |
+
+Set `PGEMBED_TRACE=1` to see where a command's time goes, on standard error.
 
 The per-user cache folder is `~/.cache/pgembed` on Linux, `~/Library/Caches/pgembed` on macOS and
 `%LOCALAPPDATA%\pgembed` on Windows. It holds `binaries/` (downloads and installs), `instances/`
