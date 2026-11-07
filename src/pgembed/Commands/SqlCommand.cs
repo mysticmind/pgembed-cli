@@ -99,15 +99,9 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         await using var connection = new NpgsqlConnection(target.ConnectionString);
         await connection.OpenAsync(ct);
 
-        var runner = new SqlRunner(cli, output);
+        var runner = new SqlRunner(cli, output, new SqlSession());
         var ok = await runner.RunAsync(connection, statements, ct);
-        if (output.Format == "json")
-        {
-            cli.WriteJson(runner.Error is { } e
-                ? new { results = runner.Results, error = new { e.SqlState, e.Message, e.Position, e.Detail, e.Hint, e.Statement } }
-                : (object)new { results = runner.Results });
-        }
-
+        runner.Complete();
         return ok ? 0 : 1;
     }
 
@@ -159,7 +153,7 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
                 $"{command} works only in the interactive prompt. Here, use one of: {string.Join(", ", MetaCommands.Names)}.");
         }
 
-        if (output.Format == "json") cli.WriteJson(new { results = runner.Results });
+        runner.Complete();
         return 0;
     }
 
@@ -183,7 +177,7 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         }
 
         if (cli.Settings.Json) cli.WriteJson(new { valid = false, error = parsed.Error.Message, position = parsed.Error.CursorPos });
-        else SqlRunner.ReportError(cli, sql, parsed.Error.Message ?? "syntax error", parsed.Error.CursorPos);
+        else Renderers.ReportError(cli.Console, sql, parsed.Error.Message ?? "syntax error", parsed.Error.CursorPos);
         return 1;
     }
 }

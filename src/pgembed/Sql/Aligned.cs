@@ -14,29 +14,63 @@ internal static class Aligned
             return;
         }
 
-        var cells = rows.Select(r => r.Select(v => Lines(text(v))).ToArray()).ToList();
-        var numeric = Enumerable.Range(0, columns.Count)
-            .Select(c => rows.Count > 0 && rows.All(r => r[c] is null or int or long or short or decimal or double or float)).ToArray();
-        var widths = Enumerable.Range(0, columns.Count)
-            .Select(c => Math.Max(columns[c].Length, cells.Count == 0 ? 0 : cells.Max(r => r[c].Max(l => l.Length))))
-            .ToArray();
+        var (widths, numeric) = Measure(columns, rows, text);
+        WriteHeader(output, columns, widths);
+        foreach (var row in rows) WriteRow(output, row, widths, numeric, text);
+    }
 
-        // header: names centered, as psql does
+    /// <summary>Column widths and which columns are numeric (right-aligned), from the rows given.</summary>
+    public static (int[] Widths, bool[] Numeric) Measure(IReadOnlyList<string> columns, IReadOnlyList<object?[]> rows, Func<object?, string> text)
+    {
+        var widths = new int[columns.Count];
+        var numeric = new bool[columns.Count];
+        for (var c = 0; c < columns.Count; c++)
+        {
+            widths[c] = columns[c].Length;
+            numeric[c] = rows.Count > 0;
+        }
+
+        foreach (var row in rows)
+        {
+            for (var c = 0; c < columns.Count; c++)
+            {
+                var value = row[c];
+                if (value is not (null or int or long or short or decimal or double or float)) numeric[c] = false;
+                foreach (var line in Lines(text(value))) widths[c] = Math.Max(widths[c], line.Length);
+            }
+        }
+
+        return (widths, numeric);
+    }
+
+    // header: names centered, as psql does
+    public static void WriteHeader(TextWriter output, IReadOnlyList<string> columns, int[] widths)
+    {
         output.WriteLine((" " + string.Join(" | ", columns.Select((name, c) => Center(name, widths[c])))).TrimEnd());
         output.WriteLine(string.Join("+", widths.Select(w => new string('-', w + 2))));
+    }
 
-        foreach (var row in cells)
+    /// <summary>One row; a value wider than its column (after the measured window) simply runs longer.</summary>
+    public static void WriteRow(TextWriter output, object?[] row, int[] widths, bool[] numeric, Func<object?, string> text)
+    {
+        var cells = new string[row.Length][];
+        var height = 1;
+        for (var c = 0; c < row.Length; c++)
         {
-            var height = row.Max(lines => lines.Length);
-            for (var line = 0; line < height; line++)
+            cells[c] = Lines(text(row[c]));
+            height = Math.Max(height, cells[c].Length);
+        }
+
+        for (var line = 0; line < height; line++)
+        {
+            var parts = new string[row.Length];
+            for (var c = 0; c < row.Length; c++)
             {
-                var parts = row.Select((lines, c) =>
-                {
-                    var value = line < lines.Length ? lines[line] : "";
-                    return numeric[c] ? value.PadLeft(widths[c]) : value.PadRight(widths[c]);
-                });
-                output.WriteLine((" " + string.Join(" | ", parts)).TrimEnd());
+                var value = line < cells[c].Length ? cells[c][line] : "";
+                parts[c] = numeric[c] ? value.PadLeft(widths[c]) : value.PadRight(widths[c]);
             }
+
+            output.WriteLine((" " + string.Join(" | ", parts)).TrimEnd());
         }
     }
 
@@ -55,7 +89,8 @@ internal static class Aligned
         }
     }
 
-    private static string[] Lines(string value) => value.ReplaceLineEndings("\n").Split('\n');
+    private static string[] Lines(string value) =>
+        value.AsSpan().IndexOfAny('\r', '\n') < 0 ? [value] : value.ReplaceLineEndings("\n").Split('\n');
 
     private static string Center(string value, int width)
     {

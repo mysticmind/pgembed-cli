@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using MysticMind.PostgresEmbed;
 using PgEmbed.Cli.Commands;
 using PgEmbed.Cli.Infrastructure;
@@ -27,14 +28,23 @@ public static class Program
         });
 
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        var services = new CliServices(AnsiConsole.Console, Console.Out, Console.Error, http, Console.IsOutputRedirected);
+        // Console.Out flushes on every write; results go through a buffer that renderers flush per statement
+        await using var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false), 1 << 16) { AutoFlush = false };
+        var services = new CliServices(AnsiConsole.Console, stdout, Console.Error, http, Console.IsOutputRedirected);
 
         var registrar = new TypeRegistrar();
         Register(registrar, services);
 
         var app = new CommandApp(registrar);
         app.Configure(config => Configure(config, services));
-        return await app.RunAsync(args, cts.Token);
+        try
+        {
+            return await app.RunAsync(args, cts.Token);
+        }
+        finally
+        {
+            await stdout.FlushAsync(CancellationToken.None);
+        }
     }
 
     /// <summary>Services and the --cache-dir interceptor, shared by the real app and the tests.</summary>
@@ -89,6 +99,7 @@ public static class Program
     // Exit codes: 1 for failures, 2 for usage errors. Expected failures print one clear line.
     private static int HandleError(Exception ex, CliServices services)
     {
+        services.Out.Flush(); // what was written before the error comes first
         switch (ex)
         {
             case CommandAppException:

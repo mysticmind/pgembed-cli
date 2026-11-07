@@ -56,6 +56,28 @@ public class InstanceLifecycleTests : IAsyncLifetime
         Assert.Equal("a;b", rows[0][1].GetString());
         Assert.Equal(JsonValueKind.Null, rows[1][1].ValueKind);
 
+        // json values come back nested, not as strings
+        var nested = await TestCli.RunAsync("sql", _name, "SELECT '{\"a\": [1, 2]}'::jsonb AS doc", "--json");
+        using (var doc = JsonDocument.Parse(nested.Out))
+        {
+            var value = doc.RootElement.GetProperty("results")[0].GetProperty("rows")[0][0];
+            Assert.Equal(2, value.GetProperty("a")[1].GetInt32());
+        }
+
+        // a capped table stops reading (the query is cancelled), and the next statement still runs
+        var capped = await TestCli.RunAsync("sql", _name, "SELECT g FROM generate_series(1, 1000000) g; SELECT 'after' AS next",
+            "--format", "table", "--max-rows", "3");
+        Assert.True(capped.ExitCode == 0, capped.All);
+        Assert.Contains("first 3 rows; more not shown", capped.Console);
+        Assert.Contains("after", capped.Console);
+
+        // inside a transaction it skips the rest instead, since a cancel would abort the transaction
+        var inTransaction = await TestCli.RunAsync("sql", _name,
+            "BEGIN; SELECT g FROM generate_series(1, 100000) g; SELECT 'same transaction' AS next; COMMIT",
+            "--format", "table", "--max-rows", "3");
+        Assert.True(inTransaction.ExitCode == 0, inTransaction.All);
+        Assert.Contains("same transaction", inTransaction.Console);
+
         var csv = await TestCli.RunAsync("sql", _name, "SELECT title FROM books WHERE id = 1", "--format", "csv");
         Assert.Equal("title\na;b", csv.Out.Trim().ReplaceLineEndings("\n"));
 

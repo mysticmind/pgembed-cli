@@ -21,6 +21,7 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
     private NpgsqlConnection? _connection;
     private SqlCatalog _catalog = SqlCatalog.Empty;
     private CancellationTokenSource? _running;
+    private readonly SqlSession _session = new();
 
     private string Database => target.Database ?? target.Username ?? Environment.UserName;
 
@@ -77,6 +78,7 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
     {
         if (_connection is not null) await _connection.DisposeAsync();
         _connection = new NpgsqlConnection(target.ConnectionString);
+        _session.Reset(); // a new session has no transaction open
         await _connection.OpenAsync(ct);
         await ReloadCatalogAsync(ct);
     }
@@ -119,7 +121,7 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
         _running = running;
         try
         {
-            await new SqlRunner(cli, output).RunAsync(connection, statements, running.Token);
+            await new SqlRunner(cli, output, _session).RunAsync(connection, statements, running.Token);
         }
         finally
         {
@@ -132,7 +134,7 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
     private async Task MetaAsync(string text, CancellationToken ct)
     {
         var (command, argument) = MetaCommands.Split(text);
-        var runner = new SqlRunner(cli, output);
+        var runner = new SqlRunner(cli, output, _session);
         if (await MetaCommands.TryRunAsync(await ConnectionAsync(ct), command, argument, runner, ct)) return;
 
         switch (command)

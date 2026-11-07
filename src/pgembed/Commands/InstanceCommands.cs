@@ -341,6 +341,7 @@ internal sealed class LogsCommand(CliServices services) : AsyncCommand<LogsComma
         if (File.Exists(file))
         {
             foreach (var line in ReadShared(file).TakeLast(Math.Max(0, settings.Tail))) services.Out.WriteLine(line);
+            await services.Out.FlushAsync(ct);
         }
 
         if (settings.Follow)
@@ -381,12 +382,12 @@ internal sealed class LogsCommand(CliServices services) : AsyncCommand<LogsComma
             var line = await reader.ReadLineAsync(ct);
             if (line is null)
             {
+                await output.FlushAsync(ct); // a burst of lines goes out at once
                 await Task.Delay(250, ct);
                 continue;
             }
 
             await output.WriteLineAsync(line);
-            await output.FlushAsync(ct);
         }
     }
 }
