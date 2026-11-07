@@ -62,7 +62,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ModelContextProtocol.Core" Version="1.4.1" />
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.4.0" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="pgsqlparser" Version="2.1.0" />
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
