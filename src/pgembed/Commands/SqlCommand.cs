@@ -150,7 +150,14 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         }
         else
         {
-            if (!cli.Instances.Exists(target)) throw new PostgresEmbedException($"There is no instance named '{target}'.");
+            if (!cli.Instances.Exists(target))
+            {
+                // the target may be a connection string pgembed did not recognize: never repeat a password
+                throw new PostgresEmbedException(Workspace.IsValidName(target)
+                    ? $"There is no instance named '{target}'."
+                    : $"'{Connections.Mask(target)}' is neither an instance name nor a connection string pgembed recognizes. " +
+                      "A URI starts with postgresql://; libpq strings are key=value pairs, Npgsql ones are separated by ';'.");
+            }
             var port = cli.Instances.RunningPort(target);
             if (port is null)
             {

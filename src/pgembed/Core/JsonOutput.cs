@@ -44,7 +44,7 @@ internal sealed record McpExtensions(string Version, IReadOnlyList<PgAvailableEx
 
 internal sealed record InstanceSummary(string Name, string? Version, string State, int? Port, long? UptimeSeconds, long DataBytes);
 
-internal sealed record McpInstances(List<InstanceSummary> Instances);
+internal sealed record McpInstances(List<InstanceSummary> Instances, List<string> Connections);
 
 internal sealed record McpStopped(string Name, bool Stopped, string Message);
 

@@ -163,6 +163,38 @@ public class McpTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_named_connection_is_used_by_name_read_only_and_never_shown()
+    {
+        var started = await TestCli.RunAsync("start", _name, "--version", "17", "--port", "0");
+        Assert.True(started.ExitCode == 0, started.All);
+        var uri = (await TestCli.RunAsync("connstr", _name, "--format", "uri")).Out.Trim();
+        var connectionString = uri.Replace("postgresql://postgres@", "postgresql://postgres:S3cretPw@"); // trust auth ignores it
+
+        var client = await ConnectAsync(new McpPolicy(false, false, false, new Dictionary<string, string> { ["shop"] = connectionString }));
+
+        var listed = await Call(client, "list_instances", []);
+        Assert.Contains("\"shop\"", Text(listed));
+        Assert.DoesNotContain("S3cretPw", Text(listed));
+
+        var read = await Call(client, "run_sql", new() { ["target"] = "shop", ["sql"] = "SELECT 42 AS answer" });
+        Assert.True(read.IsError != true, Text(read));
+        Assert.Contains("42", Text(read));
+        Assert.DoesNotContain("S3cretPw", Text(read) + read.StructuredContent);
+
+        // a server pgembed did not start: read-only unless --allow-external-writes
+        var write = await Call(client, "run_sql", new() { ["target"] = "shop", ["sql"] = "CREATE TABLE t(a int)" });
+        Assert.True(write.IsError);
+        Assert.Contains("did not start", Text(write));
+
+        var failed = await Call(client, "run_sql", new() { ["target"] = "shop", ["sql"] = "SELECT * FROM missing" });
+        Assert.DoesNotContain("S3cretPw", Text(failed));
+
+        var unrecognized = await Call(client, "run_sql", new() { ["target"] = "me:S3cretPw@db/x", ["sql"] = "SELECT 1" });
+        Assert.True(unrecognized.IsError);
+        Assert.DoesNotContain("S3cretPw", Text(unrecognized));
+    }
+
+    [Fact]
     public async Task A_read_only_server_refuses_every_write()
     {
         var client = await ConnectAsync(new McpPolicy(ReadOnly: true, false, false));

@@ -18,7 +18,7 @@ The tables, views and foreign tables in a database, with row estimates and sizes
 
 | Parameter | Type | | Description |
 | --- | --- | --- | --- |
-| `target` | string | required | Instance name, or a connection string |
+| `target` | string | required | Instance name, a connection name the server was given (list_instances shows them), or a connection string. Never put a password in a tool argument: it would be visible in the conversation; use a connection name, or PGPASSWORD or ~/.pgpass on the server |
 | `database` | string | optional | Database (default: postgres for an instance) |
 | `schema` | string | optional | Only this schema |
 
@@ -30,7 +30,7 @@ One table or view in full: columns (type, nullability, default, identity, genera
 
 | Parameter | Type | | Description |
 | --- | --- | --- | --- |
-| `target` | string | required | Instance name, or a connection string |
+| `target` | string | required | Instance name, a connection name the server was given (list_instances shows them), or a connection string. Never put a password in a tool argument: it would be visible in the conversation; use a connection name, or PGPASSWORD or ~/.pgpass on the server |
 | `table` | string | required | Table or view, optionally schema-qualified (sales.orders) |
 | `database` | string | optional | Database (default: postgres for an instance) |
 | `schema` | string | optional | Schema where an unqualified name is looked up |
@@ -51,7 +51,7 @@ The query plan, as JSON (EXPLAIN FORMAT JSON). With analyze, the statement reall
 
 | Parameter | Type | | Description |
 | --- | --- | --- | --- |
-| `target` | string | required | Instance name, or a connection string |
+| `target` | string | required | Instance name, a connection name the server was given (list_instances shows them), or a connection string. Never put a password in a tool argument: it would be visible in the conversation; use a connection name, or PGPASSWORD or ~/.pgpass on the server |
 | `sql` | string | required | One statement |
 | `analyze` | boolean | default `false` | Run it and include actual times and rows (rolled back afterwards) |
 | `database` | string | optional | Database (default: postgres for an instance) |
@@ -126,7 +126,7 @@ The extensions CREATE EXTENSION can use in a PostgreSQL version: name, default v
 
 *read-only, idempotent*
 
-Every pgembed instance on this machine: name, version, port, state, uptime, data size.
+Every pgembed instance on this machine (name, version, port, state, uptime, data size), and the names of the other servers this MCP server was given (connections), usable as a target.
 
 
 ### `list_versions`
@@ -164,7 +164,7 @@ Run SQL against an instance (by name) or any server (by connection string). Each
 
 | Parameter | Type | | Description |
 | --- | --- | --- | --- |
-| `target` | string | required | Instance name, or a connection string (Npgsql, postgresql:// URI, libpq or JDBC) |
+| `target` | string | required | Instance name, a connection name the server was given (list_instances shows them), or a connection string. Never put a password in a tool argument: it would be visible in the conversation; use a connection name, or PGPASSWORD or ~/.pgpass on the server |
 | `sql` | string | required | SQL: one or more statements |
 | `database` | string | optional | Database (default: postgres for an instance) |
 | `schema` | string | optional | Schema for unqualified names (sets the search path) |

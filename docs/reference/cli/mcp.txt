@@ -9,15 +9,18 @@ Usage:
   pgembed mcp [options]
 
 Options:
-  --read-only              Refuse anything that writes, on every target
-  --no-confirm             Run changes, kills and removals without asking (for sandboxes and
-                           throwaway agents)
-  --allow-external-writes  Allow writes to servers pgembed did not start (connection-string
-                           targets); read-only otherwise
-  --cache-dir <PATH>       Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR,
-                           else the per-user cache folder)
-  --maven-repo <URL>       Maven repository or mirror with the Postgres binaries (default: Maven
-                           Central, or PGEMBED_MAVEN_REPO)
-  --json                   Machine-readable output
-  --verbose                Log details to standard error
-  -h, --help               Show help and usage information
+  --read-only                            Refuse anything that writes, on every target
+  --no-confirm                           Run changes, kills and removals without asking (for
+                                         sandboxes and throwaway agents)
+  --allow-external-writes                Allow writes to servers pgembed did not start (named
+                                         connections and connection strings); read-only otherwise
+  --connection <NAME=CONNECTION_STRING>  A server the assistant can use by name without seeing its
+                                         connection string or password, for example --connection
+                                         prod=postgresql://me@db/shop. Repeatable
+  --cache-dir <PATH>                     Cache folder for downloads and instances (default:
+                                         PGEMBED_CACHE_DIR, else the per-user cache folder)
+  --maven-repo <URL>                     Maven repository or mirror with the Postgres binaries
+                                         (default: Maven Central, or PGEMBED_MAVEN_REPO)
+  --json                                 Machine-readable output
+  --verbose                              Log details to standard error
+  -h, --help                             Show help and usage information

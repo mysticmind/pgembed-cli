@@ -14,7 +14,11 @@ using PgEmbed.Cli.Sql;
 namespace PgEmbed.Cli.Mcp;
 
 /// <summary>How the MCP server guards the databases it reaches.</summary>
-internal sealed record McpPolicy(bool ReadOnly, bool NoConfirm, bool AllowExternalWrites);
+internal sealed record McpPolicy(bool ReadOnly, bool NoConfirm, bool AllowExternalWrites, IReadOnlyDictionary<string, string>? Connections = null)
+{
+    /// <summary>Servers the assistant uses by name, from --connection: their connection strings never reach it.</summary>
+    public IReadOnlyDictionary<string, string> Named { get; } = Connections ?? new Dictionary<string, string>();
+}
 
 /// <summary>
 /// The MCP tools: thin front ends over the same core as the commands, so a tool and its command behave the
@@ -108,7 +112,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     }
 
     [McpServerTool(Name = "list_instances", ReadOnly = true, Idempotent = true)]
-    [Description("Every pgembed instance on this machine: name, version, port, state, uptime, data size.")]
+    [Description("Every pgembed instance on this machine (name, version, port, state, uptime, data size), and the names of the other servers this MCP server was given (connections), usable as a target.")]
     public async Task<object> ListInstances(CancellationToken ct = default)
     {
         var views = new List<InstanceSummary>();
@@ -120,7 +124,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
                 running && v.Status.StartedAt is { } at ? (long)(DateTimeOffset.UtcNow - at).TotalSeconds : null, v.DataBytes));
         }
 
-        return new McpInstances(views);
+        return new McpInstances(views, policy.Named.Keys.Order().ToList());
     }
 
     [McpServerTool(Name = "stop_instance", Idempotent = true)]
@@ -218,7 +222,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
                  "To page through a large result, use ORDER BY with a keyset (WHERE id > last) or LIMIT/OFFSET.")]
     public async Task<CallToolResult> RunSql(
         McpServer server,
-        [Description("Instance name, or a connection string (Npgsql, postgresql:// URI, libpq or JDBC)")] string target,
+        [Description("Instance name, a connection name the server was given (list_instances shows them), or a connection string. Never put a password in a tool argument: it would be visible in the conversation; use a connection name, or PGPASSWORD or ~/.pgpass on the server")] string target,
         [Description("SQL: one or more statements")] string sql,
         [Description("Database (default: postgres for an instance)")] string? database = null,
         [Description("Schema for unqualified names (sets the search path)")] string? schema = null,
@@ -286,7 +290,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     [Description("The query plan, as JSON (EXPLAIN FORMAT JSON). With analyze, the statement really runs, inside a transaction that is " +
                  "always rolled back, so its changes never persist (sequences still advance); actual times and row counts are included.")]
     public async Task<CallToolResult> ExplainQuery(
-        [Description("Instance name, or a connection string")] string target,
+        [Description("Instance name, a connection name the server was given (list_instances shows them), or a connection string. Never put a password in a tool argument: it would be visible in the conversation; use a connection name, or PGPASSWORD or ~/.pgpass on the server")] string target,
         [Description("One statement")] string sql,
         [Description("Run it and include actual times and rows (rolled back afterwards)")] bool analyze = false,
         [Description("Database (default: postgres for an instance)")] string? database = null,
@@ -334,7 +338,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     [McpServerTool(Name = "describe_schema", ReadOnly = true, Idempotent = true)]
     [Description("The tables, views and foreign tables in a database, with row estimates and sizes.")]
     public async Task<object> DescribeSchema(
-        [Description("Instance name, or a connection string")] string target,
+        [Description("Instance name, a connection name the server was given (list_instances shows them), or a connection string. Never put a password in a tool argument: it would be visible in the conversation; use a connection name, or PGPASSWORD or ~/.pgpass on the server")] string target,
         [Description("Database (default: postgres for an instance)")] string? database = null,
         [Description("Only this schema")] string? schema = null,
         CancellationToken ct = default)
@@ -347,7 +351,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     [Description("One table or view in full: columns (type, nullability, default, identity, generated, primary key), indexes, " +
                  "and constraints with foreign key targets.")]
     public async Task<object> DescribeTable(
-        [Description("Instance name, or a connection string")] string target,
+        [Description("Instance name, a connection name the server was given (list_instances shows them), or a connection string. Never put a password in a tool argument: it would be visible in the conversation; use a connection name, or PGPASSWORD or ~/.pgpass on the server")] string target,
         [Description("Table or view, optionally schema-qualified (sales.orders)")] string table,
         [Description("Database (default: postgres for an instance)")] string? database = null,
         [Description("Schema where an unqualified name is looked up")] string? schema = null,
@@ -366,7 +370,8 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         _sources.Clear();
     }
 
-    private static bool IsExternal(string target) => Connections.IsConnectionString(target);
+    // a server pgembed did not start: a named connection or a connection string
+    private bool IsExternal(string target) => policy.Named.ContainsKey(target) || Connections.IsConnectionString(target);
 
     private void RequireInstance(string name)
     {
@@ -390,7 +395,9 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         NpgsqlConnectionStringBuilder builder;
         try
         {
-            (builder, _) = await SqlCommand.ResolveTargetAsync(cli, target, database, schema, ct);
+            // a named connection resolves here, on the server: the assistant only ever sees its name
+            var resolved = policy.Named.TryGetValue(target, out var named) ? named : target;
+            (builder, _) = await SqlCommand.ResolveTargetAsync(cli, resolved, database, schema, ct);
         }
         catch (PostgresEmbedException ex)
         {

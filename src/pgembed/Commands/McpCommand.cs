@@ -28,19 +28,40 @@ internal sealed class McpCommand(CliServices services) : AsyncCommand<McpCommand
         public bool NoConfirm { get; set; }
 
         [CommandOption("--allow-external-writes")]
-        [Description("Allow writes to servers pgembed did not start (connection-string targets); read-only otherwise")]
+        [Description("Allow writes to servers pgembed did not start (named connections and connection strings); read-only otherwise")]
         public bool AllowExternalWrites { get; set; }
+
+        [CommandOption("--connection <NAME=CONNECTION_STRING>")]
+        [Description("A server the assistant can use by name without seeing its connection string or password, for example --connection prod=postgresql://me@db/shop. Repeatable")]
+        public string[] Connections { get; set; } = [];
+
+        public override ValidationResult Validate()
+        {
+            foreach (var connection in Connections)
+            {
+                var eq = connection.IndexOf('=');
+                if (eq <= 0 || !Core.Workspace.IsValidName(connection[..eq]))
+                {
+                    return ValidationResult.Error(
+                        $"--connection takes NAME=CONNECTION_STRING, with a name of letters, digits, '.', '_' and '-' (got '{Core.Connections.Mask(connection)}')");
+                }
+            }
+
+            return ValidationResult.Success();
+        }
     }
 
     public const string Instructions =
         "pgembed runs real PostgreSQL servers of any version locally, with no Docker or install. " +
         "start_instance gives a named instance (it keeps running and keeps its port) and its connection string; " +
-        "run_sql, describe_schema, describe_table and explain_query work against an instance name or any connection string; " +
+        "run_sql, describe_schema, describe_table and explain_query work against an instance name, a connection name list_instances shows, " +
+        "or a connection string; never put a password in a tool argument. " +
         "check_sql and format_sql need no server. Changes to the schema or existing rows ask for confirmation.";
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
-        await using var tools = new PgEmbedTools(Quiet(settings, services.Error, services.Http), new McpPolicy(settings.ReadOnly, settings.NoConfirm, settings.AllowExternalWrites));
+        await using var tools = new PgEmbedTools(Quiet(settings, services.Error, services.Http), new McpPolicy(settings.ReadOnly, settings.NoConfirm, settings.AllowExternalWrites,
+            settings.Connections.ToDictionary(c => c[..c.IndexOf('=')], c => c[(c.IndexOf('=') + 1)..], StringComparer.Ordinal)));
         var options = CreateOptions(tools);
         await using var server = McpServer.Create(new StdioServerTransport(options), options);
         await server.RunAsync(ct);

@@ -56,3 +56,19 @@ snippet: sample_mcp_options
 A read-only setup:
 
 snippet: @/samples/mcp/read-only.json
+
+## Other servers, and passwords
+
+Anything in a tool call is part of the conversation: the client shows it, logs it, and sends it to the model.
+So a password must never be in one. pgembed instances need none (they trust local connections). For any
+other server, give the MCP server a **named connection**: the assistant uses the name, and the connection
+string stays on your machine.
+
+snippet: @/samples/mcp/named-connection.json
+
+- `list_instances` shows connection names, never their connection strings.
+- A named connection is a server pgembed did not start, so it is read-only unless you pass
+  `--allow-external-writes`.
+- Keep the password out of the connection string too: `PGPASSWORD`, or a `.pgpass` file (`PGPASSFILE`), set
+  for the server process.
+- Errors never repeat a password, even from a connection string pgembed could not read.
