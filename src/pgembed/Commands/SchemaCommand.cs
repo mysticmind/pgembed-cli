@@ -48,7 +48,7 @@ internal sealed class SchemaCommand(CliServices services) : AsyncCommand<SchemaC
         await using var connection = new NpgsqlConnection(target.ConnectionString);
         await connection.OpenAsync(ct);
 
-        var output = new SqlOutput { Format = settings.Format ?? (services.OutputRedirected ? "aligned" : "table"), MaxRows = int.MaxValue };
+        var output = new SqlOutput { Format = settings.Format ?? (services.OutputRedirected ? "aligned" : "table"), MaxRows = int.MaxValue, Terminal = !services.OutputRedirected };
         var runner = new SqlRunner(cli, output);
         string[] kinds = [.. SchemaReader.Tables, .. SchemaReader.Views, "f"];
 

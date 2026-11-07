@@ -20,6 +20,12 @@ internal sealed class SqlOutput
     /// <summary>JSON per statement as it completes (interactive) instead of one document at the end.</summary>
     public bool StreamJson { get; set; }
 
+    /// <summary>
+    /// Output goes to a terminal: control characters in data are shown, not sent, so a value cannot retitle the
+    /// window, write the clipboard (OSC 52) or hide text. Files and pipes get the data byte for byte.
+    /// </summary>
+    public bool Terminal { get; set; }
+
     /// <summary>The pager for results taller than the screen; null when output is not a terminal or paging is off.</summary>
     public string? PagerCommand { get; set; }
 

@@ -208,3 +208,49 @@ public class SqlSessionTests
         Assert.Equal(open, session.InTransaction);
     }
 }
+
+/// <summary>Data can carry terminal control sequences; a terminal shows them, files and pipes keep them.</summary>
+public class TerminalSafetyTests
+{
+    private const string Hostile = "safe\u001b]0;TITLE\u0007\u001b]52;c;cHduZWQ=\u0007\u009b2Jend";
+
+    [Fact]
+    public void Control_characters_become_visible()
+    {
+        var shown = Values.ForTerminal(Hostile);
+        Assert.DoesNotContain('\u001b', shown);
+        Assert.DoesNotContain('\u0007', shown);
+        Assert.DoesNotContain('\u009b', shown);
+        Assert.Equal("safe␛]0;TITLE␇␛]52;c;cHduZWQ=␇\\x9B2Jend", shown);
+        Assert.Equal("line one\nline\ttwo", Values.ForTerminal("line one\nline\ttwo"));
+    }
+
+    [Theory]
+    [InlineData("aligned")]
+    [InlineData("csv")]
+    [InlineData("markdown")]
+    public void A_terminal_never_gets_them_and_a_pipe_gets_them_unchanged(string format)
+    {
+        foreach (var terminal in new[] { true, false })
+        {
+            var output = new StringWriter();
+            var sink = Renderers.For(new Spectre.Console.Testing.TestConsole(), output, new SqlOutput { Format = format, Terminal = terminal });
+            sink.Begin("SELECT", null, [new SqlColumn("v\u001b[2J", "text")]);
+            sink.Row([Hostile]);
+            sink.End(new StatementSummary("SELECT", 1, null, false, 1));
+
+            Assert.Equal(!terminal, output.ToString().Contains('\u001b'));
+        }
+    }
+
+    [Fact]
+    public void The_table_view_never_sends_them()
+    {
+        var console = new Spectre.Console.Testing.TestConsole().Width(200);
+        var sink = Renderers.For(console, new StringWriter(), new SqlOutput { Format = "table" });
+        sink.Begin("SELECT", null, [new SqlColumn("v", "text")]);
+        sink.Row([Hostile]);
+        sink.End(new StatementSummary("SELECT", 1, null, false, 1));
+        Assert.DoesNotContain('\u001b', console.Output);
+    }
+}

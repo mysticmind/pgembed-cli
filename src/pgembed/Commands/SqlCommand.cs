@@ -77,7 +77,7 @@ internal sealed class SqlCommand(CliServices services) : AsyncCommand<SqlCommand
         var cli = new CliContext(settings, services);
         // a terminal gets a table that fits it; files and pipes get one row per line
         var format = settings.Format ?? (services.OutputRedirected ? "aligned" : "table");
-        var output = new SqlOutput { Format = format, MaxRows = settings.MaxRows, Timing = settings.Timing };
+        var output = new SqlOutput { Format = format, MaxRows = settings.MaxRows, Timing = settings.Timing, Terminal = !services.OutputRedirected };
         // a pager only for a person at a terminal
         if (!settings.NoPager && !services.OutputRedirected && cli.Console.Profile.Capabilities.Interactive)
         {

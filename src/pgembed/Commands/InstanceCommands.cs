@@ -360,7 +360,11 @@ internal sealed class LogsCommand(CliServices services) : AsyncCommand<LogsComma
         var file = cli.Instances.LogFile(settings.Name);
         if (File.Exists(file))
         {
-            foreach (var line in ReadShared(file).TakeLast(Math.Max(0, settings.Tail))) services.Out.WriteLine(line);
+            // log lines can hold text from any client: made safe for a terminal
+            foreach (var line in ReadShared(file).TakeLast(Math.Max(0, settings.Tail)))
+            {
+                services.Out.WriteLine(services.OutputRedirected ? line : Sql.Values.ForTerminal(line));
+            }
             await services.Out.FlushAsync(ct);
         }
 
@@ -407,7 +411,7 @@ internal sealed class LogsCommand(CliServices services) : AsyncCommand<LogsComma
                 continue;
             }
 
-            await output.WriteLineAsync(line);
+            await output.WriteLineAsync(Console.IsOutputRedirected ? line : Sql.Values.ForTerminal(line));
         }
     }
 }

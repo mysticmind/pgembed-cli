@@ -11,6 +11,7 @@ namespace PgEmbed.Cli.Tests;
 /// tools with their parameters. These tests fail when the committed files are out of date; run them with
 /// PGEMBED_UPDATE_DOCS=1 to rewrite the files.
 /// </summary>
+[Collection(McpDefinitions.Collection)]
 public class DocsTests
 {
     private static readonly bool Update = Environment.GetEnvironmentVariable("PGEMBED_UPDATE_DOCS") == "1";
@@ -88,8 +89,15 @@ public class DocsTests
         }
 
         Assert.True(File.Exists(path), $"{relative} is missing; run the tests with PGEMBED_UPDATE_DOCS=1");
-        Assert.True(File.ReadAllText(path).ReplaceLineEndings("\n") == expected,
-            $"{relative} is out of date; run the tests with PGEMBED_UPDATE_DOCS=1 and commit the change");
+        var actual = File.ReadAllText(path).ReplaceLineEndings("\n");
+        if (actual != expected)
+        {
+            var a = actual.Split('\n');
+            var e = expected.Split('\n');
+            var line = Enumerable.Range(0, Math.Min(a.Length, e.Length)).FirstOrDefault(i => a[i] != e[i], Math.Min(a.Length, e.Length));
+            Assert.Fail($"{relative} is out of date (first difference at line {line + 1}: file has '{a.ElementAtOrDefault(line)}', " +
+                        $"the code makes '{e.ElementAtOrDefault(line)}'); run the tests with PGEMBED_UPDATE_DOCS=1 and commit the change");
+        }
     }
 
     private static string RepoRoot()

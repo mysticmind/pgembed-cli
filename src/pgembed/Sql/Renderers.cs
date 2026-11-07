@@ -22,6 +22,26 @@ internal static class Values
         _ => value.ToString() ?? ""
     };
 
+    /// <summary>
+    /// Text safe to print to a terminal: control characters other than line breaks and tabs become visible
+    /// (C0 as the Unicode control pictures, ESC as ␛; DEL and C1 as \xNN).
+    /// </summary>
+    public static string ForTerminal(string text)
+    {
+        if (!text.Any(IsUnsafe)) return text;
+        var sb = new StringBuilder(text.Length + 8);
+        foreach (var c in text)
+        {
+            if (!IsUnsafe(c)) sb.Append(c);
+            else if (c < 0x20) sb.Append((char)(0x2400 + c));
+            else sb.Append($"\\x{(int)c:X2}");
+        }
+
+        return sb.ToString();
+    }
+
+    private static bool IsUnsafe(char c) => c is < (char)0x20 and not ('\n' or '\t' or '\r') || c is >= (char)0x7F and <= (char)0x9F;
+
     public static bool IsNumber(object? value) => value is int or long or short or decimal or double or float;
 
     /// <summary>A json or jsonb value indented for reading; the text as it is when it does not parse.</summary>
@@ -56,8 +76,8 @@ internal static class Renderers
     public static IResultSink For(IAnsiConsole console, TextWriter output, SqlOutput options) => options.Format switch
     {
         "aligned" => new AlignedRenderer(console, output, options),
-        "csv" => new CsvRenderer(console, output),
-        "markdown" => new MarkdownRenderer(console, output),
+        "csv" => new CsvRenderer(console, output, options.Terminal),
+        "markdown" => new MarkdownRenderer(console, output, options.Terminal),
         "json" => new JsonRenderer(console, output, options.StreamJson),
         _ => new TableRenderer(console, options)
     };
@@ -65,6 +85,10 @@ internal static class Renderers
     /// <summary>The error, then its line with a caret under the position (1-based, in code points, as Postgres reports it).</summary>
     public static void ReportError(IAnsiConsole console, string sql, string message, int position, string? detail = null, string? hint = null)
     {
+        // server messages and the statement can carry control characters: shown, not sent
+        message = Values.ForTerminal(message);
+        detail = detail is null ? null : Values.ForTerminal(detail);
+        hint = hint is null ? null : Values.ForTerminal(hint);
         console.MarkupLineInterpolated($"[red]ERROR:[/] {message}");
         if (position > 0 && Connections.CodePointToIndex(sql, position) is var index && index <= sql.Length)
         {
@@ -76,7 +100,7 @@ internal static class Renderers
             var column = Connections.CountCodePoints(sql[lineStart..index]);
 
             var prefix = $"LINE {lineNumber}: ";
-            console.WriteLine(prefix + line);
+            console.WriteLine(prefix + Values.ForTerminal(line));
             console.WriteLine(new string(' ', prefix.Length + column) + "^");
         }
 
@@ -89,10 +113,13 @@ internal static class Renderers
 }
 
 /// <summary>Writes to the plain output; errors go to the console after what was written so far.</summary>
-internal abstract class TextRenderer(IAnsiConsole console, TextWriter output) : IResultSink
+internal abstract class TextRenderer(IAnsiConsole console, TextWriter output, bool terminal = false) : IResultSink
 {
     protected TextWriter Output { get; } = output;
     protected IAnsiConsole Console { get; } = console;
+
+    /// <summary>A value as text; made safe when the output is a terminal.</summary>
+    protected string Show(object? value) => terminal ? Values.ForTerminal(Values.Text(value)) : Values.Text(value);
 
     public abstract void Begin(string statement, string? title, IReadOnlyList<SqlColumn> columns);
     public abstract void Row(object?[] values);
@@ -105,14 +132,14 @@ internal abstract class TextRenderer(IAnsiConsole console, TextWriter output) : 
     }
 }
 
-internal sealed class CsvRenderer(IAnsiConsole console, TextWriter output) : TextRenderer(console, output)
+internal sealed class CsvRenderer(IAnsiConsole console, TextWriter output, bool terminal) : TextRenderer(console, output, terminal)
 {
     public override void Begin(string statement, string? title, IReadOnlyList<SqlColumn> columns)
     {
         for (var i = 0; i < columns.Count; i++)
         {
             if (i > 0) Output.Write(',');
-            Output.Write(Csv(columns[i].Name));
+            Output.Write(Csv(Show(columns[i].Name)));
         }
 
         Output.WriteLine();
@@ -123,7 +150,7 @@ internal sealed class CsvRenderer(IAnsiConsole console, TextWriter output) : Tex
         for (var i = 0; i < values.Length; i++)
         {
             if (i > 0) Output.Write(',');
-            Output.Write(Csv(Values.Text(values[i])));
+            Output.Write(Csv(Show(values[i])));
         }
 
         Output.WriteLine();
@@ -135,17 +162,17 @@ internal sealed class CsvRenderer(IAnsiConsole console, TextWriter output) : Tex
         value.AsSpan().IndexOfAny(",\"\n\r") >= 0 ? "\"" + value.Replace("\"", "\"\"") + "\"" : value;
 }
 
-internal sealed class MarkdownRenderer(IAnsiConsole console, TextWriter output) : TextRenderer(console, output)
+internal sealed class MarkdownRenderer(IAnsiConsole console, TextWriter output, bool terminal) : TextRenderer(console, output, terminal)
 {
     public override void Begin(string statement, string? title, IReadOnlyList<SqlColumn> columns)
     {
-        if (title is not null) Output.WriteLine($"**{Cell(title)}**\n");
-        Output.WriteLine("| " + string.Join(" | ", columns.Select(c => Cell(c.Name))) + " |");
+        if (title is not null) Output.WriteLine($"**{Cell(Show(title))}**\n");
+        Output.WriteLine("| " + string.Join(" | ", columns.Select(c => Cell(Show(c.Name)))) + " |");
         Output.WriteLine("|" + string.Concat(columns.Select(_ => " --- |")));
     }
 
     public override void Row(object?[] values) =>
-        Output.WriteLine("| " + string.Join(" | ", values.Select(v => Cell(Values.Text(v)))) + " |");
+        Output.WriteLine("| " + string.Join(" | ", values.Select(v => Cell(Show(v)))) + " |");
 
     public override void End(StatementSummary summary)
     {
@@ -162,7 +189,7 @@ internal sealed class MarkdownRenderer(IAnsiConsole console, TextWriter output) 
 /// a result is longer, the rest streams with those widths, so memory stays bounded. In a terminal, a result
 /// taller than the screen opens in the pager.
 /// </summary>
-internal sealed class AlignedRenderer(IAnsiConsole terminal, TextWriter output, SqlOutput options) : TextRenderer(terminal, output)
+internal sealed class AlignedRenderer(IAnsiConsole terminal, TextWriter output, SqlOutput options) : TextRenderer(terminal, output, options.Terminal)
 {
     public const int Window = 1000;
 
@@ -191,7 +218,7 @@ internal sealed class AlignedRenderer(IAnsiConsole terminal, TextWriter output, 
     {
         if (_widths is not null)
         {
-            Write(w => Aligned.WriteRow(w, values, _widths, _numeric!, Values.Text));
+            Write(w => Aligned.WriteRow(w, values, _widths, _numeric!, Show));
             return;
         }
 
@@ -214,8 +241,8 @@ internal sealed class AlignedRenderer(IAnsiConsole terminal, TextWriter output, 
             OpenPager(_pending.Count * (_columns.Count + 1) + 2);
             Write(w =>
             {
-                if (_title is not null) w.WriteLine(_title);
-                Aligned.Write(w, _columns.Select(c => c.Name).ToList(), _pending, true, Values.Text);
+                if (_title is not null) w.WriteLine(Show(_title));
+                Aligned.Write(w, _columns.Select(c => Show(c.Name)).ToList(), _pending, true, Show);
             });
         }
         else if (_widths is null) Flush();
@@ -234,13 +261,13 @@ internal sealed class AlignedRenderer(IAnsiConsole terminal, TextWriter output, 
     {
         // a full window means the result is at least that tall
         OpenPager(_pending.Count + 4);
-        var names = _columns.Select(c => c.Name).ToList();
-        (_widths, _numeric) = Aligned.Measure(names, _pending, Values.Text);
+        var names = _columns.Select(c => Show(c.Name)).ToList();
+        (_widths, _numeric) = Aligned.Measure(names, _pending, Show);
         Write(w =>
         {
-            if (_title is not null) w.WriteLine(_title);
+            if (_title is not null) w.WriteLine(Show(_title));
             Aligned.WriteHeader(w, names, _widths);
-            foreach (var row in _pending) Aligned.WriteRow(w, row, _widths, _numeric, Values.Text);
+            foreach (var row in _pending) Aligned.WriteRow(w, row, _widths, _numeric, Show);
         });
         _pending.Clear();
     }
@@ -317,13 +344,13 @@ internal sealed class TableRenderer(IAnsiConsole console, SqlOutput options) : I
 
     private void Render(IAnsiConsole target, StatementSummary summary, string timing)
     {
-        if (_title is not null) target.MarkupLineInterpolated($"[bold]{_title}[/]");
+        if (_title is not null) target.MarkupLineInterpolated($"[bold]{Values.ForTerminal(_title)}[/]");
         if (options.Expanded) WriteExpanded(target);
         else
         {
             var table = new Table().Border(TableBorder.Simple);
-            foreach (var column in _columns) table.AddColumn(Markup.Escape(column.Name));
-            foreach (var row in _rows) table.AddRow(row.Select(v => v is null ? "[dim]NULL[/]" : Markup.Escape(Values.Text(v))).ToArray());
+            foreach (var column in _columns) table.AddColumn(Markup.Escape(Values.ForTerminal(column.Name)));
+            foreach (var row in _rows) table.AddRow(row.Select(v => v is null ? "[dim]NULL[/]" : Markup.Escape(Values.ForTerminal(Values.Text(v)))).ToArray());
             target.Write(table);
         }
 
@@ -348,11 +375,11 @@ internal sealed class TableRenderer(IAnsiConsole console, SqlOutput options) : I
             for (var c = 0; c < _columns.Count; c++)
             {
                 var value = _rows[r][c];
-                grid.AddRow(new Text(_columns[c].Name), value switch
+                grid.AddRow(new Text(Values.ForTerminal(_columns[c].Name)), value switch
                 {
                     null => new Markup("[dim]NULL[/]"),
-                    SqlJson json => new Text(Values.Pretty(json)),
-                    _ => new Text(Values.Text(value))
+                    SqlJson json => new Text(Values.ForTerminal(Values.Pretty(json))),
+                    _ => new Text(Values.ForTerminal(Values.Text(value)))
                 });
             }
 

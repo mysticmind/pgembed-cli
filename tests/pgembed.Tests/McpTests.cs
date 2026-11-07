@@ -9,7 +9,15 @@ using PgEmbed.Cli.Mcp;
 
 namespace PgEmbed.Cli.Tests;
 
+/// <summary>Tests that build the MCP tool definitions run one at a time: the docs compare their generated schemas.</summary>
+[CollectionDefinition(Collection)]
+public sealed class McpDefinitions
+{
+    public const string Collection = "mcp definitions";
+}
+
 /// <summary>The MCP server, driven by the SDK's own client over in-memory streams, against a real instance.</summary>
+[Collection(McpDefinitions.Collection)]
 public class McpTests : IAsyncLifetime
 {
     private readonly string _name = TestCache.UniqueName("mcp");
