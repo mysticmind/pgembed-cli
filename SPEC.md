@@ -4,7 +4,7 @@
 
 It is built on the [MysticMind.PostgresEmbed](https://github.com/mysticmind/mysticmind-postgresembed) library and uses the same binaries ([zonky](https://github.com/zonkyio/embedded-postgres-binaries)).
 
-Status: 0.1 is built (not yet published); 0.2 is built on the `v0.2` branch, and its download progress on `v0.2-progress`, which waits for library 5.3 to be published. Decisions marked **(decided)** were agreed on 2026-11-06. Decisions marked **(proposed)** were made for 0.2 on 2026-11-07 and built as described; they wait for review.
+Status: 0.1 is built (not yet published); 0.2 is built, across the branches listed under "Before releasing 0.2". Decisions marked **(decided)** were agreed on 2026-11-06. Decisions marked **(proposed)** were made for 0.2 on 2026-11-07 and built as described; they wait for review.
 
 ## Goals
 
@@ -346,9 +346,13 @@ Scope is kept lean on purpose. 0.1 grew past the first plan (the prompt, `schema
 
 ### Before releasing 0.2
 
+The work is stacked on three branches: `v0.2` (the features), `v0.2-aot` on it (System.CommandLine, generated
+JSON, Native AOT packaging), and `v0.2-progress-aot` on that (download progress; needs library 5.3).
+
 1. Publish MysticMind.PostgresEmbed 5.3.0 from its `5.3-install-progress` branch.
-2. Merge `v0.2-progress` into `v0.2` (it moves the library reference to `[5.3.0, 6.0.0)`), then `v0.2` into `main`.
-3. Run `publish.yaml`; then, to list the server in the official MCP Registry, `mcp-publisher publish src/pgembed/.mcp/server.json` (the README already names it, as the registry requires).
+2. Merge `v0.2-progress-aot` into `main` (it moves the library reference to `[5.3.0, 6.0.0)`).
+3. Check that CI's `aot` job passes on Windows: the native Windows build is the one platform not yet run by hand.
+4. Run `publish.yaml`; then, to list the server in the official MCP Registry, `mcp-publisher publish src/pgembed/.mcp/server.json` (the README already names it, as the registry requires).
 
 ### Backlog
 
