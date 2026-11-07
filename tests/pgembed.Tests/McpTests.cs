@@ -358,3 +358,29 @@ public class McpListingTests
         Assert.Contains($"<!-- mcp-name: {name} -->", File.ReadAllText(RepoFile("README.md")));
     }
 }
+
+public class McpProgressTests
+{
+    private sealed class Recorder : IProgress<ModelContextProtocol.ProgressNotificationValue>
+    {
+        public List<ModelContextProtocol.ProgressNotificationValue> Values { get; } = [];
+        public void Report(ModelContextProtocol.ProgressNotificationValue value) => Values.Add(value);
+    }
+
+    [Fact]
+    public void Install_progress_becomes_mcp_progress_with_bytes_then_steps()
+    {
+        var recorder = new Recorder();
+        var progress = new PgEmbedTools.McpInstallProgress(recorder);
+
+        progress.Report(new MysticMind.PostgresEmbed.PgInstallProgress(MysticMind.PostgresEmbed.PgInstallStep.Download, "PostgreSQL 17.6.0", 1 << 20, 30 << 20));
+        progress.Report(new MysticMind.PostgresEmbed.PgInstallProgress(MysticMind.PostgresEmbed.PgInstallStep.Download, "PostgreSQL 17.6.0", 30 << 20, 30 << 20));
+        progress.Report(new MysticMind.PostgresEmbed.PgInstallProgress(MysticMind.PostgresEmbed.PgInstallStep.Extract, "PostgreSQL 17.6.0"));
+
+        Assert.Equal(1 << 20, recorder.Values[0].Progress);
+        Assert.Equal(30 << 20, recorder.Values[0].Total);
+        Assert.Equal("Downloading PostgreSQL 17.6.0: 1 MB of 30 MB", recorder.Values[0].Message);
+        Assert.Equal(30 << 20, recorder.Values[2].Progress); // progress never goes back
+        Assert.Equal("Extracting PostgreSQL 17.6.0", recorder.Values[2].Message);
+    }
+}

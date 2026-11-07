@@ -77,13 +77,14 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     [Description("Download, verify and extract a PostgreSQL version ahead of time, so a later start_instance is fast.")]
     public async Task<object> InstallVersion(
         [Description("Exact (17.6.0), major (17), minor (17.6) or latest")] string version,
+        IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken ct = default)
     {
         var exact = await cli.Catalog.ResolveAsync(version, cli.Platform, false, ct);
         await using var server = new PgServer(new PgServerOptions
         {
             PgVersion = exact, BinariesDir = cli.Workspace.BinariesDir, MavenRepo = cli.MavenRepo,
-            HttpClient = cli.Services.Http, Logger = cli.Logger
+            HttpClient = cli.Services.Http, Logger = cli.Logger, InstallProgress = ToMcp(progress), RequireChecksum = true
         });
         await server.InstallAsync(ct);
         return new InstalledVersion(exact, cli.Platform.RuntimeIdentifier, server.InstallDir);
@@ -99,7 +100,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         await using var server = new PgServer(new PgServerOptions
         {
             PgVersion = exact, BinariesDir = cli.Workspace.BinariesDir, MavenRepo = cli.MavenRepo,
-            HttpClient = cli.Services.Http, Logger = cli.Logger
+            HttpClient = cli.Services.Http, Logger = cli.Logger, RequireChecksum = true
         });
         return new McpExtensions(exact, await server.GetAvailableExtensionsAsync(ct));
     }
@@ -114,10 +115,11 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         [Description("Instance name: letters, digits, '.', '_' and '-'")] string name,
         [Description("Version for a new instance: exact (17.6.0), major (17), minor (17.6) or latest. Not needed to restart an existing one")] string? version = null,
         [Description("Port; default 5432 when free, else any free port, remembered for later starts")] int? port = null,
+        IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken ct = default)
     {
         var result = await cli.Instances.StartAsync(name, version, port, new Dictionary<string, string>(), [],
-            keepRunningAfterExit: true, refresh: false, ct);
+            keepRunningAfterExit: true, refresh: false, ct, progress: ToMcp(progress));
         var serverPort = result.Server.PgPort;
         // never disposed: disposing stops a server this process started, and it is meant to outlive this process
         lock (_started) _started.Add(result.Server);
@@ -159,7 +161,7 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
     {
         RequireInstance(name);
         await cli.Instances.StopAsync(name, ct);
-        return await StartInstance(name, null, null, ct);
+        return await StartInstance(name, null, null, null, ct);
     }
 
     [McpServerTool(Name = "kill_instance", Destructive = true)]
@@ -448,6 +450,29 @@ internal sealed class PgEmbedTools(CliContext cli, McpPolicy policy) : IAsyncDis
         {
             await using var role = new NpgsqlCommand("SET LOCAL ROLE pg_read_all_data", connection, transaction);
             await role.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    /// <summary>Install progress as MCP progress notifications: bytes while downloading, then the step by name.</summary>
+    private static IProgress<PgInstallProgress>? ToMcp(IProgress<ProgressNotificationValue>? progress) =>
+        progress is null ? null : new McpInstallProgress(progress);
+
+    internal sealed class McpInstallProgress(IProgress<ProgressNotificationValue> progress) : IProgress<PgInstallProgress>
+    {
+        private float _done;
+
+        public void Report(PgInstallProgress value)
+        {
+            if (value.BytesDone is { } bytes) _done = bytes;
+            var verb = value.Step switch { PgInstallStep.Download => "Downloading", PgInstallStep.Verify => "Verifying", _ => "Extracting" };
+            progress.Report(new ProgressNotificationValue
+            {
+                Progress = _done,
+                Total = value.BytesTotal,
+                Message = value.Step == PgInstallStep.Download && value.BytesTotal is { } total
+                    ? $"{verb} {value.Item}: {Format.Bytes(value.BytesDone ?? 0)} of {Format.Bytes(total)}"
+                    : $"{verb} {value.Item}"
+            });
         }
     }
 

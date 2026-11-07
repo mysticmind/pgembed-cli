@@ -72,9 +72,9 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
         foreach (var (name, version) in targets)
         {
             StartResult result = null!;
-            await InstallCommand.Spin(cli, $"Starting {name}", async () => result = await cli.Instances.StartAsync(
+            await InstallDisplay.RunAsync(cli, $"Starting {name}", async progress => result = await cli.Instances.StartAsync(
                 name, version, settings.Port, parameters, settings.Extensions, keepRunningAfterExit: !settings.Foreground,
-                settings.Refresh, ct, settings.Locale, settings.Password));
+                settings.Refresh, ct, settings.Locale, settings.Password, progress));
 
             if (settings.Foreground && result.Attached)
             {

@@ -111,7 +111,7 @@
   <!-- The published library by default. To build against a local checkout before a library
        release, pass -p:PgEmbedLibraryProject=<path to MysticMind.PostgresEmbed.csproj>. -->
   <ItemGroup Condition="'$(PgEmbedLibraryProject)' == ''">
-    <PackageReference Include="MysticMind.PostgresEmbed" Version="[5.2.1, 6.0.0)" />
+    <PackageReference Include="MysticMind.PostgresEmbed" Version="[5.3.0, 6.0.0)" />
   </ItemGroup>
   <ItemGroup Condition="'$(PgEmbedLibraryProject)' != ''">
     <ProjectReference Include="$(PgEmbedLibraryProject)" />

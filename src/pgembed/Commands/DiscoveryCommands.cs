@@ -90,17 +90,23 @@ internal sealed class InstallCommand(CliServices services) : AsyncCommand<Instal
         var cli = new CliContext(settings, services);
         var version = await cli.Catalog.ResolveAsync(settings.Version, cli.Platform, settings.Refresh, ct);
 
-        await using var server = new PgServer(new PgServerOptions
+        PgServer server = null!;
+        await InstallDisplay.RunAsync(cli, $"Installing PostgreSQL {version}", async progress =>
         {
-            PgVersion = version,
-            BinariesDir = cli.Workspace.BinariesDir,
-            Extensions = settings.Extensions.Select(InstanceManager.ParseExtension).ToList(),
-            MavenRepo = cli.MavenRepo,
-            HttpClient = services.Http,
-            Logger = cli.Logger
+            server = new PgServer(new PgServerOptions
+            {
+                PgVersion = version,
+                BinariesDir = cli.Workspace.BinariesDir,
+                Extensions = settings.Extensions.Select(InstanceManager.ParseExtension).ToList(),
+                MavenRepo = cli.MavenRepo,
+                HttpClient = services.Http,
+                Logger = cli.Logger,
+                InstallProgress = progress,
+                RequireChecksum = true
+            });
+            await server.InstallAsync(ct);
         });
-
-        await Spin(cli, $"Installing PostgreSQL {version}", () => server.InstallAsync(ct));
+        await using var _ = server;
 
         if (settings.Json) cli.WriteJson(new InstalledVersion(version, cli.Platform.RuntimeIdentifier, server.InstallDir));
         else cli.Console.MarkupLineInterpolated($"Installed PostgreSQL [bold]{version}[/] ({cli.Platform.RuntimeIdentifier}) at {server.InstallDir}");
@@ -134,18 +140,21 @@ internal sealed class ExtensionsCommand(CliServices services) : AsyncCommand<Ext
         var cli = new CliContext(settings, services);
         var version = await cli.Catalog.ResolveAsync(settings.Version, cli.Platform, false, ct);
 
-        await using var server = new PgServer(new PgServerOptions
-        {
-            PgVersion = version,
-            BinariesDir = cli.Workspace.BinariesDir,
-            MavenRepo = cli.MavenRepo,
-            HttpClient = services.Http,
-            Logger = cli.Logger
-        });
-
         IReadOnlyList<PgAvailableExtension> extensions = [];
-        await InstallCommand.Spin(cli, $"Reading the extensions of PostgreSQL {version}",
-            async () => extensions = await server.GetAvailableExtensionsAsync(ct));
+        await InstallDisplay.RunAsync(cli, $"Reading the extensions of PostgreSQL {version}", async progress =>
+        {
+            await using var server = new PgServer(new PgServerOptions
+            {
+                PgVersion = version,
+                BinariesDir = cli.Workspace.BinariesDir,
+                MavenRepo = cli.MavenRepo,
+                HttpClient = services.Http,
+                Logger = cli.Logger,
+                InstallProgress = progress,
+                RequireChecksum = true
+            });
+            extensions = await server.GetAvailableExtensionsAsync(ct);
+        });
 
         if (settings.Json)
         {

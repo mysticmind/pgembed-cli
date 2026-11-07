@@ -28,7 +28,7 @@ internal sealed class InstanceManager(
     public async Task<StartResult> StartAsync(
         string name, string? versionSpec, int? port, IReadOnlyDictionary<string, string> serverParams,
         IReadOnlyList<string> extensions, bool keepRunningAfterExit, bool refresh, CancellationToken ct, string? locale = null,
-        bool requirePassword = false)
+        bool requirePassword = false, IProgress<PgInstallProgress>? progress = null)
     {
         var record = registry.Get(name);
         var dataMajor = registry.DataMajor(name);
@@ -85,7 +85,10 @@ internal sealed class InstanceManager(
             KeepRunningAfterExit = keepRunningAfterExit,
             MavenRepo = mavenRepo,
             HttpClient = http,
-            Logger = logger
+            Logger = logger,
+            InstallProgress = progress,
+            // a mirror that publishes no checksum gets no unverified install
+            RequireChecksum = true
         };
 
         // the locale only matters to initdb, on the first start; set only when chosen, to keep the library's default
