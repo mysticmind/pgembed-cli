@@ -15,8 +15,8 @@ internal static class PrivateFiles
 
     public static void Folder(string path)
     {
-        if (OperatingSystem.IsWindows()) return;
         Directory.CreateDirectory(path);
+        if (OperatingSystem.IsWindows()) return;
         System.IO.File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
 

@@ -77,7 +77,7 @@ public class RendererTests
         Feed(sink, [null, "a", 1]);
         sink.End(new StatementSummary("CREATE TABLE t()", 0, -1, false, 1));
 
-        var documents = output.ToString().Split("\n}\n", StringSplitOptions.RemoveEmptyEntries).Select(d => d + "\n}").ToList();
+        var documents = output.ToString().ReplaceLineEndings("\n").Split("\n}\n", StringSplitOptions.RemoveEmptyEntries).Select(d => d + "\n}").ToList();
         Assert.Equal(2, documents.Count);
         foreach (var d in documents) JsonDocument.Parse(d).Dispose();
     }
@@ -126,7 +126,9 @@ public class PagerTests
         var file = Path.Combine(Path.GetTempPath(), $"pgembed-pager-{Guid.NewGuid():N}.txt");
         var console = new TestConsole().Width(120);
         var output = new StringWriter();
-        var options = new SqlOutput { Format = format, PagerCommand = $"cat > '{file}'", ScreenHeight = screen };
+        // a "pager" that writes what it gets to a file: cmd.exe has no cat; findstr "^" copies every line
+        var pager = OperatingSystem.IsWindows() ? $"findstr \"^\" > \"{file}\"" : $"cat > '{file}'";
+        var options = new SqlOutput { Format = format, PagerCommand = pager, ScreenHeight = screen };
         return (console, output, Renderers.For(console, output, options), file);
     }
 

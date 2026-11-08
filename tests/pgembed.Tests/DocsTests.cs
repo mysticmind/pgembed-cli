@@ -80,6 +80,7 @@ public class DocsTests
 
     private static void Check(string relative, string expected)
     {
+        expected = expected.ReplaceLineEndings("\n"); // AppendLine writes \r\n on Windows
         var path = Path.Combine(RepoRoot(), relative);
         if (Update)
         {
