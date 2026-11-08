@@ -315,7 +315,7 @@ Not exposed, on purpose: `cache clean` (deletes downloads shared with every proj
 
 **Results sized for an assistant.** `run_sql` returns at most `max_rows` rows per statement (default 100, up to 10,000) with a `truncated` flag and, when truncated, a hint to page with `ORDER BY` and a keyset (`WHERE id > <last>`) or `LIMIT`/`OFFSET`. Reading stops at the cap. Paging stays stateless on purpose: no `offset` argument that wraps the query (it fits only a single `SELECT`, and pages are unstable without `ORDER BY`), and no cursor held open between calls (it would hold a transaction open while the assistant thinks). It also shortens long values (default 2,000 characters, said in the result). Results come as structured content (columns, rows, affected rows, timing; `json` and `jsonb` values nested, not as strings) plus a compact Markdown table for clients that show text only. Errors are tool errors with the SQLSTATE, message, line and caret, detail and hint, so the assistant can correct the SQL.
 
-**Progress.** `install_version` and `start_instance` send MCP progress notifications: bytes while downloading, then the verify and extract steps. Built on `v0.2-progress`; it needs library 5.3, below.
+**Progress.** `install_version` and `start_instance` send MCP progress notifications: bytes while downloading, then the verify and extract steps. Built on `v0.2-progress-aot`, with library 5.3, below.
 
 **Protocol hygiene.** Standard output carries only protocol messages; everything else (library log, warnings) goes to standard error. The MCP host builds the core services directly, not through the CLI's console context, so no Spectre output can reach standard output.
 
@@ -349,9 +349,9 @@ Six small, generic additions, each useful to a test author who never uses the CL
 5. **Shared cache:** `PGEMBED_CACHE_DIR` as the default `BinariesDir` (`<cache>/binaries`), and a cross-process lock so each archive is downloaded once.
 6. **`PgPlatform.Detect()`:** the detected OS, CPU and binaries artifact name, so the CLI does not duplicate platform detection.
 
-### 5.3 (built on the library's `5.3-install-progress` branch, not yet published)
+### 5.3 (released 2026-11-08)
 
-- **Install progress:** `PgServerOptions.InstallProgress`, an `IProgress<PgInstallProgress>` (step: download, verify, extract; the item; bytes received and total), reported only when a download or install happens. A test runner benefits on its own (a first CI run shows why it is slow), so it passes the library rule. pgembed shows it as a progress bar in the terminal and as MCP progress notifications (branch `v0.2-progress`).
+- **Install progress:** `PgServerOptions.InstallProgress`, an `IProgress<PgInstallProgress>` (step: download, verify, extract; the item; bytes received and total), reported only when a download or install happens. A test runner benefits on its own (a first CI run shows why it is slow), so it passes the library rule. pgembed shows it as a progress bar in the terminal and as MCP progress notifications (branch `v0.2-progress-aot`). Also in 5.3: `RequireChecksum`, which refuses a mirror's download that has no published SHA-256.
 
 Later, when needed: resumable downloads.
 
@@ -363,7 +363,7 @@ Later, when needed: resumable downloads.
 | Library 5.2.0 | released 2026-11-06: the six items above |
 | Library 5.2.1 | released 2026-11-06: a killed server's shared memory is removed, so kills no longer exhaust macOS's 32 System V segments |
 | pgembed 0.1 | built: `versions`, `install`, `extensions`; instances (`start`/`stop`/`kill`/`restart`/`status`/`connstr`/`logs`/`rm`; background by default, `--foreground`, several versions); `sql` against instances or any connection string, with parser-based splitting, `--check`, `--schema`, confirmation of changes and the `aligned` format; the interactive prompt; `schema` and the `\d` commands; `connstr` in every format; `doctor`, `cache list`/`clean` |
-| Library 5.3.0 | built, not published: install progress |
+| Library 5.3.0 | released 2026-11-08: install progress, `RequireChecksum`, archive links kept inside the install; a docs site |
 | pgembed 0.2 | built: MCP server; SQL executor split with streaming; `format`; `sql --check` summaries; JSON values in results (nested in JSON output, pretty in `\x`), relaxed JSON escaping, line breaks in Markdown cells; a pager; reading stops at the row cap; instance names validated; precompiled packages per platform on .NET 10; the performance budgets met and checked in CI; a locale that exists on Linux images without `en_US.UTF-8`; download progress (with library 5.3) |
 | pgembed 0.3 | web UI (`pgembed ui`), see below |
 | When there is demand | the backlog below |
@@ -373,9 +373,9 @@ Scope is kept lean on purpose. 0.1 grew past the first plan (the prompt, `schema
 ### Before releasing 0.2
 
 The work is stacked on three branches: `v0.2` (the features), `v0.2-aot` on it (System.CommandLine, generated
-JSON, Native AOT packaging), and `v0.2-progress-aot` on that (download progress; needs library 5.3).
+JSON, Native AOT packaging), and `v0.2-progress-aot` on that (download progress, with library 5.3.0).
 
-1. Publish MysticMind.PostgresEmbed 5.3.0 from its `5.3-install-progress` branch.
+1. ~~Publish MysticMind.PostgresEmbed 5.3.0.~~ Done on 2026-11-08.
 2. Merge `v0.2-progress-aot` into `main` (it moves the library reference to `[5.3.0, 6.0.0)`).
 3. Check that CI's `aot` job passes on Windows: the native Windows build is the one platform not yet run by hand.
 4. Run `publish.yaml`; then, to list the server in the official MCP Registry, `mcp-publisher publish src/pgembed/.mcp/server.json` (the README already names it, as the registry requires).
