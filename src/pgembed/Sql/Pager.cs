@@ -57,8 +57,18 @@ internal sealed class Pager : IDisposable
             UseShellExecute = false,
             StandardInputEncoding = new UTF8Encoding(false)
         };
-        start.ArgumentList.Add(windows ? "/c" : "-c");
-        start.ArgumentList.Add(command);
+        if (windows)
+        {
+            // cmd.exe does not read \" escapes, which ArgumentList would add around a command with quotes in it
+            // (PAGER="C:\Program Files\...\less.exe"); with /s it strips only the outer quotes and runs the rest as
+            // written. /d skips AutoRun commands.
+            start.Arguments = $"/d /s /c \"{command}\"";
+        }
+        else
+        {
+            start.ArgumentList.Add("-c");
+            start.ArgumentList.Add(command);
+        }
         // less shows colors only when asked; keep any options the user set
         if (Environment.GetEnvironmentVariable("LESS") is null) start.Environment["LESS"] = "R";
 
