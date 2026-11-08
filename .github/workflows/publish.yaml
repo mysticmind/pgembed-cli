@@ -126,6 +126,14 @@ jobs:
       - name: List the packages
         run: ls -la artifacts
 
+      # nuget.org reads the MCP server configuration from exactly .mcp/server.json; 0.2.0 shipped it as
+      # .mcp//server.json, and nuget.org reported that the package had none
+      - name: Check each package has .mcp/server.json
+        run: |
+          for package in artifacts/*.nupkg; do
+            unzip -Z1 "$package" | grep -qx '.mcp/server.json' || { echo "::error::$package has no .mcp/server.json"; exit 1; }
+          done
+
       - name: Install .NET
         uses: actions/setup-dotnet@v6
         with:
