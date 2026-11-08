@@ -4,7 +4,6 @@ using PgEmbed.Cli.Commands;
 using PgEmbed.Cli.Sql;
 using PgEmbed.Cli.Core;
 using PgEmbed.Cli.Infrastructure;
-using Spectre.Console.Cli.Testing;
 
 namespace PgEmbed.Cli.Tests;
 
@@ -29,10 +28,16 @@ public class SqlSplitTests
     }
 
     [Fact]
-    public void Leaves_a_script_the_parser_rejects_as_one_batch_for_the_server()
+    public void Splits_a_script_the_parser_rejects_with_the_scanner()
     {
-        const string sql = "SELECT FROM WHERE; SELECT 2";
-        Assert.Equal([sql], SqlRunner.Split(sql));
+        // each part reaches the server on its own; the one the parser cannot read asks first
+        Assert.Equal(["SELECT FROM WHERE", "SELECT 2"], SqlRunner.Split("SELECT FROM WHERE; SELECT 2"));
+        Assert.Equal(["SELEC 'a;b'", "SELECT $$c;d$$"], SqlRunner.Split("SELEC 'a;b'; SELECT $$c;d$$"));
+        // the scanner skips statements that start with a word it does not know; none is lost
+        Assert.Equal(["SELECT 'a;b'", "SELEC 2"], SqlRunner.Split("SELECT 'a;b'; SELEC 2"));
+        // two such statements in a row stay together, and the server refuses a command with two statements
+        Assert.Equal(["SELEC 1; SELEC 'é;'", "SELECT 2"], SqlRunner.Split("SELEC 1; SELEC 'é;'; SELECT 2"));
+        Assert.Contains(SqlSafety.Changes(SqlRunner.Split("SELEC 1; SELECT 2")), c => c.Statement == "SELEC 1" && c.What.Contains("could not be checked"));
     }
 }
 
@@ -204,13 +209,6 @@ public class ExtensionArgumentTests
     }
 }
 
-public class TypeRegistrarTests
-{
-    [Fact]
-    public void Meets_the_spectre_container_contract() =>
-        new TypeRegistrarBaseTests(() => new TypeRegistrar()).RunAllTests();
-}
-
 internal sealed class FakeMaven(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
 {
     public List<HttpRequestMessage> Requests { get; } = [];
@@ -220,4 +218,19 @@ internal sealed class FakeMaven(Func<HttpRequestMessage, HttpResponseMessage> re
         Requests.Add(request);
         return Task.FromResult(respond(request));
     }
+}
+
+public class LocaleTests
+{
+    [Fact]
+    public void Keeps_the_default_when_en_US_exists() => Assert.Null(InstanceManager.ChooseLocale(["C", "C.utf8", "en_US.utf8", "POSIX"]));
+
+    [Fact]
+    public void Uses_C_UTF8_when_en_US_is_missing() => Assert.Equal("C.UTF-8", InstanceManager.ChooseLocale(["C", "C.utf8", "POSIX"]));
+
+    [Fact]
+    public void Falls_back_to_C() => Assert.Equal("C", InstanceManager.ChooseLocale(["C", "POSIX"]));
+
+    [Fact]
+    public void Keeps_the_default_when_nothing_is_listed() => Assert.Null(InstanceManager.ChooseLocale([]));
 }

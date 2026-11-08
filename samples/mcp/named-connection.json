@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pgembed": {
+      "command": "pgembed",
+      "args": ["mcp", "--connection", "shop=postgresql://me@db.example.com/shop"],
+      "env": { "PGPASSFILE": "/Users/me/.pgpass" }
+    }
+  }
+}

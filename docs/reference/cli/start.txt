@@ -1,0 +1,34 @@
+Description:
+  Start a named instance in the background (created on first start)
+
+  Examples:
+    pgembed start app --version 17
+    pgembed start ci --version 16,17,18
+
+Usage:
+  pgembed start <name> [options]
+
+Arguments:
+  <name>  Instance name; with several versions, the prefix: <name>-<major>
+
+Options:
+  -v, --version <VERSION>  Version for a new instance (17, 17.6, 17.6.0, latest), or several:
+                           16,17,18. Kept for later starts
+  -p, --port <PORT>        Port (default: the instance's remembered port, else 5432 if free, else a
+                           free port)
+  --param <KEY=VALUE>      Postgres setting, for example --param max_connections=300. Repeatable
+  --extension <URL>        Extension zip to install; append #sha256=<hex> to verify it. Repeatable
+  --password               Require a password for TCP connections, for shared machines: pgembed
+                           generates it and keeps it in the instance's private settings; pgembed
+                           connstr prints it
+  --locale <LOCALE>        Locale for a new instance's data (default: en_US.UTF-8; on Linux without
+                           it, C.UTF-8)
+  --foreground             Stay attached and stream the log; Ctrl+C stops the server
+  --refresh                Check for new versions now
+  --cache-dir <PATH>       Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR,
+                           else the per-user cache folder)
+  --maven-repo <URL>       Maven repository or mirror with the Postgres binaries (default: Maven
+                           Central, or PGEMBED_MAVEN_REPO)
+  --json                   Machine-readable output
+  --verbose                Log details to standard error
+  -h, --help               Show help and usage information

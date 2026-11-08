@@ -1,0 +1,20 @@
+Description:
+  List the extensions CREATE EXTENSION can use in a version
+
+  Examples:
+    pgembed extensions 17
+
+Usage:
+  pgembed extensions <version> [options]
+
+Arguments:
+  <version>  Exact (17.6.0), major (17), minor (17.6) or latest
+
+Options:
+  --cache-dir <PATH>  Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR, else the
+                      per-user cache folder)
+  --maven-repo <URL>  Maven repository or mirror with the Postgres binaries (default: Maven Central,
+                      or PGEMBED_MAVEN_REPO)
+  --json              Machine-readable output
+  --verbose           Log details to standard error
+  -h, --help          Show help and usage information

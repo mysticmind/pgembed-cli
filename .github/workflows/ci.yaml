@@ -13,7 +13,7 @@ env:
 
 jobs:
   test:
-    # The tool targets net8.0 and rolls forward; the tests run it on each supported runtime.
+    # The tool targets net10.0 and rolls forward; the tests run it on each supported runtime.
     name: ${{ matrix.name }} (${{ matrix.framework }})
     strategy:
       fail-fast: false
@@ -21,8 +21,6 @@ jobs:
         include:
           - { name: Linux x64, os: ubuntu-latest, framework: net11.0 }
           - { name: Linux x64, os: ubuntu-latest, framework: net10.0 }
-          - { name: Linux x64, os: ubuntu-latest, framework: net9.0 }
-          - { name: Linux x64, os: ubuntu-latest, framework: net8.0 }
           - { name: Linux arm64, os: ubuntu-24.04-arm, framework: net10.0 }
           - { name: macOS arm64, os: macos-latest, framework: net10.0 }
           - { name: macOS x64, os: macos-15-intel, framework: net10.0 }
@@ -36,16 +34,111 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+          dotnet-version: 10.0.x
 
       - name: Run tests
         run: dotnet test --project tests/pgembed.Tests/pgembed.Tests.csproj --framework ${{ matrix.framework }}
 
+      # the top-level and portable packages; the Native AOT ones are built by the aot job and publish.yaml
       - name: Pack the tool
-        run: dotnet pack src/pgembed/pgembed.csproj -c Release -o artifacts
+        run: dotnet pack src/pgembed/pgembed.csproj -c Release -p:PublishAot=false -o artifacts
+
+  # The shipped binary is Native AOT, built per OS: build it on each and use it for real. Trim and AOT
+  # warnings fail the build (TreatWarningsAsErrors), so code that would break under AOT is caught here.
+  aot:
+    name: Native AOT (${{ matrix.rid }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64, os: ubuntu-latest, exe: pgembed }
+          - { rid: osx-arm64, os: macos-latest, exe: pgembed }
+          - { rid: win-x64, os: windows-latest, exe: pgembed.exe }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Publish (Native AOT)
+        run: dotnet publish src/pgembed/pgembed.csproj -c Release -r ${{ matrix.rid }} -o publish
+
+      - name: Use it
+        run: |
+          pg=./publish/${{ matrix.exe }}
+          $pg --version
+          $pg sql --check "SELECT 1; DELETE FROM t"
+          $pg start smoke --version 17 --port 0
+          $pg sql smoke "SELECT version(), '{\"a\": 1}'::jsonb AS doc" --json
+          $pg schema smoke
+          $pg rm smoke --force --yes
+
+  # The docs site shows code from samples/: the CLI samples run here, the C# samples run as tests, and the
+  # site build fails on a snippet that no longer exists. The reference pages generated from the code are
+  # checked by DocsTests in the test job.
+  docs:
+    name: Docs (samples and site)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          dotnet-version: 10.0.x
+
+      - name: Install Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build pgembed
+        run: dotnet build src/pgembed/pgembed.csproj -c Release
+
+      - name: Run the CLI samples
+        run: samples/run-cli-samples.sh "dotnet $GITHUB_WORKSPACE/src/pgembed/bin/Release/net10.0/pgembed.dll"
+
+      - name: Run the C# samples
+        run: dotnet test --project samples/PgEmbed.Samples/PgEmbed.Samples.csproj -c Release
+        env:
+          PGEMBED: dotnet ${{ github.workspace }}/src/pgembed/bin/Release/net10.0/pgembed.dll
+
+      - name: Build the site
+        run: |
+          npm ci
+          npm run docs:build
+
+  # Performance budgets (SPEC.md, Performance), end to end with a ReadyToRun build as it ships. The budgets are
+  # set on a developer machine; shared runners are slower and noisier, hence the tolerance. The report goes to
+  # the job summary.
+  budgets:
+    name: Performance budgets (Linux x64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          dotnet-version: 10.0.x
+
+      - name: Publish as shipped (Native AOT, linux-x64)
+        run: dotnet publish src/pgembed/pgembed.csproj -c Release -r linux-x64 -o publish
+
+      - name: Check the budgets
+        run: python3 bench/budgets.py ./publish/pgembed --tolerance 2.5
 
   test-alpine:
     name: Alpine x64 (net11.0)

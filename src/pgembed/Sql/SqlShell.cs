@@ -21,11 +21,14 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
     private NpgsqlConnection? _connection;
     private SqlCatalog _catalog = SqlCatalog.Empty;
     private CancellationTokenSource? _running;
+    private readonly SqlSession _session = new();
 
     private string Database => target.Database ?? target.Username ?? Environment.UserName;
 
     public async Task<int> RunAsync(ILineReader reader, CancellationToken ct)
     {
+        // the parser's first use costs about 90 ms; pay it while connecting, not on the first keystroke
+        _ = Task.Run(() => PgSqlParser.Parser.Parse("SELECT 1"), CancellationToken.None);
         await ConnectAsync(ct);
         cli.Console.MarkupLineInterpolated(
             $"Connected to [bold]{label}[/], database [bold]{Database}[/] (PostgreSQL {_connection!.PostgreSqlVersion}). [dim]\\? for help, \\q to quit.[/]");
@@ -77,6 +80,7 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
     {
         if (_connection is not null) await _connection.DisposeAsync();
         _connection = new NpgsqlConnection(target.ConnectionString);
+        _session.Reset(); // a new session has no transaction open
         await _connection.OpenAsync(ct);
         await ReloadCatalogAsync(ct);
     }
@@ -119,7 +123,7 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
         _running = running;
         try
         {
-            await new SqlRunner(cli, output).RunAsync(connection, statements, running.Token);
+            await new SqlRunner(cli, output, _session).RunAsync(connection, statements, running.Token);
         }
         finally
         {
@@ -132,7 +136,7 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
     private async Task MetaAsync(string text, CancellationToken ct)
     {
         var (command, argument) = MetaCommands.Split(text);
-        var runner = new SqlRunner(cli, output);
+        var runner = new SqlRunner(cli, output, _session);
         if (await MetaCommands.TryRunAsync(await ConnectionAsync(ct), command, argument, runner, ct)) return;
 
         switch (command)
@@ -177,6 +181,15 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
                 cli.Console.MarkupLineInterpolated($"Output format is {argument}.");
                 break;
 
+            case "\\pager":
+                var on = argument switch { "on" => true, "off" => false, _ => output.PagerCommand is null };
+                output.PagerCommand = on ? Pager.Command() : null;
+                if (on && output.ScreenHeight == 0) output.ScreenHeight = Pager.ScreenHeight();
+                if (on && output.PagerCommand is null) cli.Console.MarkupLineInterpolated($"[yellow]No pager to use:[/] set {Pager.Variable} or PAGER.");
+                else if (on) cli.Console.MarkupLineInterpolated($"Pager is on ({output.PagerCommand}).");
+                else cli.Console.MarkupLine("Pager is off.");
+                break;
+
             case "\\i" when argument is not null:
                 await RunSqlAsync(await File.ReadAllTextAsync(argument, ct), ct);
                 break;
@@ -202,6 +215,7 @@ internal sealed class SqlShell(CliContext cli, NpgsqlConnectionStringBuilder tar
         Row("\\x [on|off]", "Expanded display: one block per row");
         Row("\\timing [on|off]", "Show how long statements take");
         Row("\\format <format>", "table, aligned (psql-style), json, csv or markdown");
+        Row("\\pager [on|off]", "Open results taller than the screen in a pager (PGEMBED_PAGER, PAGER or less)");
         Row("\\i <file>", "Run a SQL file");
         Row("\\q", "Quit (also: exit, quit)");
         cli.Console.Write(grid);

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pgembed": {
+      "command": "dnx",
+      "args": ["pgembed", "mcp"]
+    }
+  }
+}

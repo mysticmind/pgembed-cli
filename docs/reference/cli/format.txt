@@ -1,0 +1,25 @@
+Description:
+  Format SQL, keeping comments; needs no server
+
+  Examples:
+    pgembed format "select * from t where id=1"
+    pgembed format -f schema.sql --write
+    pgembed format -f a.sql -f b.sql --check
+
+Usage:
+  pgembed format [<sql>] [options]
+
+Arguments:
+  <sql>  SQL to format; or use -f, or pipe it in
+
+Options:
+  -f, --file <PATH>   A SQL file to format; repeat for several
+  --write             Rewrite the files in place
+  --check             Only list the files that are not formatted; exit 1 if any
+  --cache-dir <PATH>  Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR, else the
+                      per-user cache folder)
+  --maven-repo <URL>  Maven repository or mirror with the Postgres binaries (default: Maven Central,
+                      or PGEMBED_MAVEN_REPO)
+  --json              Machine-readable output
+  --verbose           Log details to standard error
+  -h, --help          Show help and usage information

@@ -2,6 +2,12 @@
   <Folder Name="/src/">
     <Project Path="src/pgembed/pgembed.csproj" />
   </Folder>
+  <Folder Name="/bench/">
+    <Project Path="bench/pgembed.Benchmarks/pgembed.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/PgEmbed.Samples/PgEmbed.Samples.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/pgembed.Tests/pgembed.Tests.csproj" />
   </Folder>

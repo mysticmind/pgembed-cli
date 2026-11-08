@@ -6,19 +6,83 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   DOTNET_NOLOGO: 1
 
+# pgembed ships as a top-level package that points at one package per platform:
+#   pgembed.<rid>   Native AOT, one per platform; AOT compiles only for the OS it runs on, so each is
+#                   packed on a matching runner
+#   pgembed.any     portable (JIT), for platforms without their own package
+#   pgembed         the top-level package; dotnet tool install and dnx pick the right one from it
+# Every platform package is pushed before the top-level one, so an install never finds one missing.
+
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  # Native AOT packages, each built on its own OS (macOS packs osx-x64 too: AOT cross-compiles between the
+  # architectures of one OS)
+  pack-native:
     # publish only what is on main
     if: github.ref == 'refs/heads/main'
+    name: Pack ${{ matrix.rid }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { rid: linux-x64, os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { rid: osx-arm64, os: macos-latest }
+          - { rid: osx-x64, os: macos-latest }
+          - { rid: win-x64, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
 
-    # NuGet trusted publishing: no stored API key. The job gets a GitHub OIDC token, which
-    # nuget.org exchanges for an API key valid for one hour, provided it matches the trusted
-    # publishing policy for this repository and workflow file (nuget.org > profile > Trusted Publishing).
-    permissions:
-      contents: read
-      id-token: write
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
 
+      # Native AOT links with clang on Linux
+      - name: Install the AOT toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Pack
+        run: dotnet pack src/pgembed/pgembed.csproj -c Release -r ${{ matrix.rid }} -o artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkg-${{ matrix.rid }}
+          path: artifacts/*.nupkg
+
+  # musl (Alpine) packages, packed in the Alpine SDK image. It runs through docker directly: GitHub's
+  # JavaScript actions do not run inside Alpine containers on Arm runners.
+  pack-musl:
+    if: github.ref == 'refs/heads/main'
+    name: Pack ${{ matrix.rid }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { rid: linux-musl-x64, os: ubuntu-latest }
+          - { rid: linux-musl-arm64, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Pack in Alpine
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src mcr.microsoft.com/dotnet/sdk:11.0-alpine sh -c \
+            "apk add --no-cache clang build-base zlib-dev && dotnet pack src/pgembed/pgembed.csproj -c Release -r ${{ matrix.rid }} -o artifacts"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkg-${{ matrix.rid }}
+          path: artifacts/*.nupkg
+
+  # the portable package, and the top-level package that points at all of them
+  pack-portable:
+    if: github.ref == 'refs/heads/main'
+    name: Pack any and the top-level package
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -29,7 +93,43 @@ jobs:
           global-json-file: global.json
 
       - name: Pack
-        run: dotnet pack src/pgembed/pgembed.csproj -c Release -o artifacts
+        run: |
+          dotnet pack src/pgembed/pgembed.csproj -c Release -r any -p:PublishAot=false -o artifacts
+          # without AOT, a top-level pack also makes portable builds of every platform; only the top-level
+          # package is kept from it: the platform packages come from their own jobs
+          dotnet pack src/pgembed/pgembed.csproj -c Release -p:PublishAot=false -o top
+          cp top/pgembed.[0-9]*.nupkg artifacts/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkg-portable
+          path: artifacts/*.nupkg
+
+  push:
+    needs: [pack-native, pack-musl, pack-portable]
+    runs-on: ubuntu-latest
+
+    # NuGet trusted publishing: no stored API key. The job gets a GitHub OIDC token, which
+    # nuget.org exchanges for an API key valid for one hour, provided it matches the trusted
+    # publishing policy for this repository and workflow file (nuget.org > profile > Trusted Publishing).
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nupkg-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: List the packages
+        run: ls -la artifacts
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
 
       # requested right before the push: the key expires after one hour
       - name: NuGet login (OIDC to short-lived API key)
@@ -38,5 +138,11 @@ jobs:
         with:
           user: mysticmind # nuget.org profile name of the package owner, not an email address
 
-      - name: Push
-        run: dotnet nuget push "artifacts/*.nupkg" -s https://api.nuget.org/v3/index.json -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate
+      - name: Push the platform packages
+        run: |
+          for package in artifacts/pgembed.[a-z]*.nupkg; do
+            dotnet nuget push "$package" -s https://api.nuget.org/v3/index.json -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate
+          done
+
+      - name: Push the top-level package
+        run: dotnet nuget push artifacts/pgembed.[0-9]*.nupkg -s https://api.nuget.org/v3/index.json -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate

@@ -1,0 +1,15 @@
+{
+  "name": "pgembed-docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Documentation site for pgembed (embedded PostgreSQL from the command line and MCP).",
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "devDependencies": {
+    "@radarleaf/markdown-it-region-snippets": "^1.2.0",
+    "vitepress": "^1.6.3"
+  }
+}

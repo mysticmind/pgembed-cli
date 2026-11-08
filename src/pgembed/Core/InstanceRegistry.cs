@@ -11,7 +11,8 @@ internal sealed record InstanceRecord(
     Dictionary<string, string> ServerParams,
     List<string> Extensions,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? LastStartedAt);
+    DateTimeOffset? LastStartedAt,
+    string? Password = null);
 
 /// <summary>
 /// The instance registry: one <c>instance.json</c> per instance folder. Instances created by the library
@@ -23,10 +24,11 @@ internal sealed class InstanceRegistry(Workspace workspace)
 
     public InstanceRecord? Get(string name)
     {
+        if (!Workspace.IsValidName(name)) return null;
         var file = Path.Combine(workspace.InstanceDir(name), FileName);
         try
         {
-            return File.Exists(file) ? JsonSerializer.Deserialize<InstanceRecord>(File.ReadAllText(file), Json.Options) : null;
+            return File.Exists(file) ? Json.Deserialize<InstanceRecord>(File.ReadAllText(file)) : null;
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
@@ -37,10 +39,12 @@ internal sealed class InstanceRegistry(Workspace workspace)
     public void Save(InstanceRecord record)
     {
         var dir = workspace.InstanceDir(record.Name);
-        Directory.CreateDirectory(dir);
+        Infrastructure.PrivateFiles.Folder(dir);
         var file = Path.Combine(dir, FileName);
         var temp = $"{file}.{Guid.NewGuid():N}.tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(record, Json.Options));
+        File.WriteAllText(temp, ""); // created first so it is private before it holds anything
+        Infrastructure.PrivateFiles.File(temp);
+        File.WriteAllText(temp, Json.Serialize(record));
         File.Move(temp, file, overwrite: true);
     }
 
@@ -58,6 +62,7 @@ internal sealed class InstanceRegistry(Workspace workspace)
     /// <summary>The Postgres major an instance's data was created with, or null before its first start.</summary>
     public string? DataMajor(string name)
     {
+        if (!Workspace.IsValidName(name)) return null;
         var file = Path.Combine(workspace.InstanceDir(name), "data", "PG_VERSION");
         return File.Exists(file) ? File.ReadAllText(file).Trim() : null;
     }

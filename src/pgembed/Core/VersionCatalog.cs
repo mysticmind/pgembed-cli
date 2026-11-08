@@ -18,7 +18,7 @@ internal sealed class VersionCatalog(Workspace workspace, HttpClient http, strin
 {
     public static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
 
-    private sealed record Cached(string? ETag, DateTimeOffset FetchedAt, List<string> Versions);
+    internal sealed record Cached(string? ETag, DateTimeOffset FetchedAt, List<string> Versions);
 
     public async Task<VersionList> GetAsync(PgPlatformInfo platform, bool refresh, CancellationToken ct)
     {
@@ -82,7 +82,7 @@ internal sealed class VersionCatalog(Workspace workspace, HttpClient http, strin
     {
         try
         {
-            return File.Exists(file) ? JsonSerializer.Deserialize<Cached>(File.ReadAllText(file), Json.Options) : null;
+            return File.Exists(file) ? Json.Deserialize<Cached>(File.ReadAllText(file)) : null;
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
@@ -94,7 +94,7 @@ internal sealed class VersionCatalog(Workspace workspace, HttpClient http, strin
     {
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         var temp = $"{file}.{Guid.NewGuid():N}.tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(cached, Json.Options));
+        File.WriteAllText(temp, Json.Serialize(cached));
         File.Move(temp, file, overwrite: true);
     }
 }

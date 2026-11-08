@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <!-- net8.0 runs on .NET 8 and 9; net10.0 on .NET 10 and later. dotnet tool install picks the
-         newest one the machine's runtime supports. They differ only in the line editor's version. -->
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <!-- .NET 10 and later (RollForward). .NET 8 and 9 reach end of support on 2026-11-10, and
+         platform-specific tool packages need the .NET 10 SDK to install anyway. -->
+    <TargetFramework>net10.0</TargetFramework>
     <RollForward>Major</RollForward>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -15,11 +15,24 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>pgembed</ToolCommandName>
     <PackageId>pgembed</PackageId>
-    <VersionPrefix>0.1.0</VersionPrefix>
-    <Description>Run PostgreSQL locally without installing it: named instances of any version in the background, SQL with readable results and errors, version and extension discovery, and a shared download cache. Built on MysticMind.PostgresEmbed.</Description>
+    <!-- One Native AOT package per platform (a native executable: no JIT, no runtime to load), a portable
+         "any" package for other platforms, and a top-level package that points at them; dotnet tool install
+         and dnx pick the right one. AOT compiles only for the OS it runs on, so publish.yaml packs each
+         platform on a matching runner:
+           dotnet pack                               the top-level package
+           dotnet pack -r <rid>                      one platform, Native AOT
+           dotnet pack -r any -p:PublishAot=false    the portable package
+         Push the platform packages before the top-level one. -->
+    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-x64;osx-arm64;any</RuntimeIdentifiers>
+    <ToolPackageRuntimeIdentifiers>$(RuntimeIdentifiers)</ToolPackageRuntimeIdentifiers>
+    <PublishAot>true</PublishAot>
+    <!-- also an MCP server: nuget.org shows its configuration, and dnx pgembed mcp runs it -->
+    <PackageType>McpServer</PackageType>
+    <VersionPrefix>0.2.0</VersionPrefix>
+    <Description>Run PostgreSQL locally without installing it: named instances of any version in the background, SQL with readable results and errors, schema inspection, SQL formatting, and an MCP server for AI assistants. Built on MysticMind.PostgresEmbed.</Description>
     <Authors>Babu Annamalai</Authors>
     <Copyright>Copyright (C) Babu Annamalai</Copyright>
-    <PackageTags>postgres;postgresql;pg;embedded;cli;dotnet-tool;testing</PackageTags>
+    <PackageTags>postgres;postgresql;pg;embedded;cli;dotnet-tool;testing;mcp;mcp-server</PackageTags>
     <PackageProjectUrl>https://github.com/mysticmind/pgembed-cli</PackageProjectUrl>
     <RepositoryUrl>https://github.com/mysticmind/pgembed-cli</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -30,38 +43,86 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
+  <!-- platform builds: no debug symbols in the package (a .dSYM on macOS is over 100 MB) -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'any'">
+    <StripSymbols>true</StripSymbols>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="$(PackageReadmePath)" Pack="true" PackagePath="\README.md" />
     <None Include="..\..\assets\icon.png" Pack="true" PackagePath="\" />
+    <None Include=".mcp\server.json" Pack="true" PackagePath="\.mcp\" />
     <InternalsVisibleTo Include="pgembed.Tests" />
+    <InternalsVisibleTo Include="pgembed.Benchmarks" />
   </ItemGroup>
 
+  <!-- nuget.org shows raw HTML as text, so the packed README leaves out the HTML logo above the title (nuget.org
+       shows the package icon there); the rest, including the mcp-name comment the MCP registry checks, is the
+       repository README unchanged. One copy per platform: a
+       top-level pack also packs every platform. -->
+  <PropertyGroup>
+    <PackageReadmePath>$(BaseIntermediateOutputPath)package-readme/$(RuntimeIdentifier)/README.md</PackageReadmePath>
+  </PropertyGroup>
+
+  <Target Name="WritePackageReadme" BeforeTargets="_GetPackageFiles;GenerateNuspec">
+    <WritePackageReadme Source="$(MSBuildThisFileDirectory)../../README.md" Destination="$(PackageReadmePath)" />
+  </Target>
+
+  <!-- an inline task, not WriteLinesToFile: MSBuild turns backslashes in lines into slashes outside Windows -->
+  <UsingTask TaskName="WritePackageReadme" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Source ParameterType="System.String" Required="true" />
+      <Destination ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        // the logo is the one line that is an HTML image; the mcp-name comment the MCP registry reads stays
+        var text = System.Text.RegularExpressions.Regex.Replace(File.ReadAllText(Source), @"^<img [^\n]*\n(\r?\n)?", "",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        if (text.Contains("<img ") || text.Contains("<a "))
+        {
+            Log.LogError("README.md has HTML that nuget.org shows as text; use Markdown");
+            return false;
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Destination)));
+        if (!File.Exists(Destination) || File.ReadAllText(Destination) != text) File.WriteAllText(Destination, text);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
   <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.4.0" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="pgsqlparser" Version="2.1.0" />
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
-    <PackageReference Include="Spectre.Console.Cli" Version="0.57.2" />
+    <PackageReference Include="System.CommandLine" Version="2.0.14" />
   </ItemGroup>
 
-  <!-- The interactive prompt's line editor. Its maintained releases (5.x and later) need .NET 10;
-       4.1 has the same API and serves .NET 8 and 9. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
-    <PackageReference Include="PrettyPrompt" Version="4.1.1" />
-  </ItemGroup>
-  <ItemGroup Condition="'$(TargetFramework)' != 'net8.0'">
+  <!-- the interactive prompt's line editor -->
+  <ItemGroup>
     <PackageReference Include="PrettyPrompt" Version="6.0.5" />
   </ItemGroup>
 
   <!-- The published library by default. To build against a local checkout before a library
        release, pass -p:PgEmbedLibraryProject=<path to MysticMind.PostgresEmbed.csproj>. -->
   <ItemGroup Condition="'$(PgEmbedLibraryProject)' == ''">
-    <PackageReference Include="MysticMind.PostgresEmbed" Version="[5.2.1, 6.0.0)" />
+    <PackageReference Include="MysticMind.PostgresEmbed" Version="[5.3.0, 6.0.0)" />
   </ItemGroup>
   <ItemGroup Condition="'$(PgEmbedLibraryProject)' != ''">
     <ProjectReference Include="$(PgEmbedLibraryProject)" />
   </ItemGroup>
+
+  <!-- Security: Npgsql sends each command as one statement, unparsed. With SQL rewriting on, Npgsql would split a
+       command at semicolons with its own reading of the SQL; if that reading differed from the server's or from
+       pgembed's checks (string modes, say), a statement could be smuggled past them. Raw, the server refuses a
+       command that holds more than one statement. -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="Npgsql.EnableSqlRewriting" Value="false" Trim="true" />
+  </ItemGroup>
+
 </Project>

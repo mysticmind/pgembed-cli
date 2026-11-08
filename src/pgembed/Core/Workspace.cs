@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using MysticMind.PostgresEmbed;
 
 namespace PgEmbed.Cli.Core;
@@ -8,7 +9,7 @@ namespace PgEmbed.Cli.Core;
 /// <c>InstanceName</c> attaches to. <c>--cache-dir</c> is applied by setting <c>PGEMBED_CACHE_DIR</c> for
 /// this process before a command runs (see <see cref="CacheDirInterceptor"/>).
 /// </summary>
-internal sealed class Workspace
+internal sealed partial class Workspace
 {
     public Workspace(string cacheDir)
     {
@@ -28,5 +29,15 @@ internal sealed class Workspace
     /// <summary>Version metadata, owned by the CLI.</summary>
     public string MetadataDir => Path.Combine(CacheDir, "metadata");
 
-    public string InstanceDir(string name) => Path.Combine(InstancesDir, name);
+    /// <summary>An instance's folder. Names follow the library's rule, so a name never leaves the instances folder.</summary>
+    public string InstanceDir(string name) =>
+        IsValidName(name)
+            ? Path.Combine(InstancesDir, name)
+            : throw new PostgresEmbedException(
+                $"'{name}' is not a valid instance name: use letters, digits, '.', '_' and '-', starting with a letter or digit, up to 63 characters.");
+
+    public static bool IsValidName(string name) => ValidName().IsMatch(name);
+
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")]
+    private static partial Regex ValidName();
 }

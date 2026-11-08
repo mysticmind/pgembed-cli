@@ -1,7 +1,6 @@
 using System.Runtime.CompilerServices;
 using MysticMind.PostgresEmbed;
 using PgEmbed.Cli.Infrastructure;
-using Spectre.Console.Cli.Testing;
 using Spectre.Console.Testing;
 
 namespace PgEmbed.Cli.Tests;
@@ -36,20 +35,20 @@ internal static class TestCli
     /// <summary>As if standard output went to a file or pipe.</summary>
     public static Task<CliRun> RunRedirectedAsync(params string[] args) => RunAsync(null, true, args);
 
-    private static async Task<CliRun> RunAsync(HttpMessageHandler? handler, bool redirected, string[] args)
+    /// <summary>With a console of the given width, as for the help text the docs show.</summary>
+    public static Task<CliRun> RunWithWidthAsync(int width, params string[] args) => RunAsync(null, false, args, width);
+
+    private static async Task<CliRun> RunAsync(HttpMessageHandler? handler, bool redirected, string[] args, int width = 250)
     {
-        var console = new TestConsole().Width(250);
+        var console = new TestConsole().Width(width);
         var output = new StringWriter();
         var error = new StringWriter();
         using var http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
         var services = new CliServices(console, output, error, http, redirected);
 
-        var registrar = new TypeRegistrar();
-        Program.Register(registrar, services);
-        var app = new CommandAppTester(registrar, console: console);
-        app.Configure(config => Program.Configure(config, services));
-
-        var result = await app.RunAsync(args, TestContext.Current.CancellationToken);
-        return new CliRun(result.ExitCode, result.Output, output.ToString(), error.ToString());
+        var app = Program.Build(services);
+        app.HelpWidth = width;
+        var exitCode = await app.RunAsync(args, TestContext.Current.CancellationToken);
+        return new CliRun(exitCode, console.Output, output.ToString(), error.ToString());
     }
 }

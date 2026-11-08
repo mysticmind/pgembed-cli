@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- the tool targets net8.0 and rolls forward; the tests run it on each supported runtime -->
-    <TargetFrameworks>net8.0;net9.0;net10.0;net11.0</TargetFrameworks>
+    <!-- the tool targets net10.0 and rolls forward; the tests run it on each supported runtime -->
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -16,12 +16,21 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Spectre.Console.Cli.Testing" Version="0.57.2" />
+    <PackageReference Include="Spectre.Console.Testing" Version="0.57.2" />
     <PackageReference Include="xunit.v3" Version="4.0.2" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+
+  <!-- Security: Npgsql sends each command as one statement, unparsed. With SQL rewriting on, Npgsql would split a
+       command at semicolons with its own reading of the SQL; if that reading differed from the server's or from
+       pgembed's checks (string modes, say), a statement could be smuggled past them. Raw, the server refuses a
+       command that holds more than one statement. -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="Npgsql.EnableSqlRewriting" Value="false" Trim="true" />
   </ItemGroup>
 
 </Project>

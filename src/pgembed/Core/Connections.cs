@@ -9,24 +9,29 @@ namespace PgEmbed.Cli.Core;
 /// Npgsql connection string. Every format carries the same five things: host, port, user, database and,
 /// optionally, a schema (the search path).
 /// </summary>
-internal static class Connections
+internal static partial class Connections
 {
     public static readonly string[] FormatNames = ["npgsql", "uri", "libpq", "jdbc", "env"];
 
-    public static string Format(string format, int port, string database, string? schema, string host = "localhost", string user = InstanceManager.DefaultUser)
+    public static string Format(string format, int port, string database, string? schema, string host = "localhost",
+        string user = InstanceManager.DefaultUser, string? password = null)
     {
         var nl = Environment.NewLine;
         return format switch
         {
-            "npgsql" => $"Host={host};Port={port};Username={user};Database={database}" + (schema is null ? "" : $";Search Path={schema}"),
-            "uri" => $"postgresql://{Uri.EscapeDataString(user)}@{host}:{port}/{Uri.EscapeDataString(database)}"
+            "npgsql" => $"Host={host};Port={port};Username={user};Database={database}" + (schema is null ? "" : $";Search Path={schema}")
+                        + (password is null ? "" : $";Password={password}"),
+            "uri" => $"postgresql://{Uri.EscapeDataString(user)}{(password is null ? "" : ":" + Uri.EscapeDataString(password))}@{host}:{port}/{Uri.EscapeDataString(database)}"
                      + (schema is null ? "" : "?options=" + Uri.EscapeDataString($"-c search_path={schema}")),
             "libpq" => $"host={host} port={port} user={LibpqQuote(user)} dbname={LibpqQuote(database)}"
-                       + (schema is null ? "" : $" options={LibpqQuote($"-c search_path={schema}")}"),
+                       + (schema is null ? "" : $" options={LibpqQuote($"-c search_path={schema}")}")
+                       + (password is null ? "" : $" password={LibpqQuote(password)}"),
             "jdbc" => $"jdbc:postgresql://{host}:{port}/{Uri.EscapeDataString(database)}?user={Uri.EscapeDataString(user)}"
-                      + (schema is null ? "" : $"&currentSchema={Uri.EscapeDataString(schema)}"),
+                      + (schema is null ? "" : $"&currentSchema={Uri.EscapeDataString(schema)}")
+                      + (password is null ? "" : $"&password={Uri.EscapeDataString(password)}"),
             "env" => $"PGHOST={host}{nl}PGPORT={port}{nl}PGUSER={user}{nl}PGDATABASE={database}"
-                     + (schema is null ? "" : $"{nl}PGOPTIONS='-c search_path={schema}'"),
+                     + (schema is null ? "" : $"{nl}PGOPTIONS='-c search_path={schema}'")
+                     + (password is null ? "" : $"{nl}PGPASSWORD={password}"),
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
         };
     }
@@ -49,15 +54,19 @@ internal static class Connections
         var text = value.Trim();
         try
         {
-            if (text.StartsWith("jdbc:postgresql:", StringComparison.OrdinalIgnoreCase)) return FromJdbc(text["jdbc:".Length..]);
-            if (text.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
-                text.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)) return FromUri(text, jdbc: false);
-            if (!text.Contains(';') && TryLibpq(text, out var libpq)) return libpq;
-            return new NpgsqlConnectionStringBuilder(text);
+            var builder =
+                text.StartsWith("jdbc:postgresql:", StringComparison.OrdinalIgnoreCase) ? FromJdbc(text["jdbc:".Length..])
+                : text.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) || text.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ? FromUri(text, jdbc: false)
+                : !text.Contains(';') && TryLibpq(text, out var libpq) ? libpq
+                : new NpgsqlConnectionStringBuilder(text);
+
+            // as libpq: no host means PGHOST, else this machine
+            if (string.IsNullOrEmpty(builder.Host)) builder.Host = Environment.GetEnvironmentVariable("PGHOST") ?? "localhost";
+            return builder;
         }
         catch (Exception ex) when (ex is ArgumentException or FormatException or KeyNotFoundException)
         {
-            throw new PostgresEmbedException($"Could not read the connection string: {ex.Message}");
+            throw new PostgresEmbedException($"Could not read the connection string: {Mask(ex.Message)}");
         }
     }
 
@@ -192,7 +201,17 @@ internal static class Connections
         }
 
         // only libpq when every key is one; "Host=x" alone is left to Npgsql, which reads it the same way
-        if (pairs.Count == 0 || pairs.Any(p => !LibpqKeys.ContainsKey(p.Key))) return false;
+        if (pairs.Count == 0) return false;
+        if (pairs.FirstOrDefault(p => !LibpqKeys.ContainsKey(p.Key)) is { Key: { } unknown })
+        {
+            // several space-separated pairs can only be libpq, so name the key that is wrong
+            if (pairs.Count > 1)
+            {
+                throw new ArgumentException($"unknown key '{unknown}'; libpq keys are {string.Join(", ", LibpqKeys.Keys.Order())}");
+            }
+
+            return false;
+        }
         foreach (var (key, value) in pairs)
         {
             if (key.Equals("port", StringComparison.OrdinalIgnoreCase)) builder.Port = int.Parse(value);
@@ -202,13 +221,31 @@ internal static class Connections
         return true;
     }
 
-    /// <summary>The connection string with the password left out, for display.</summary>
+    /// <summary>The connection string with its secrets left out, for display.</summary>
     public static string Redacted(NpgsqlConnectionStringBuilder builder)
     {
         var copy = new NpgsqlConnectionStringBuilder(builder.ConnectionString);
         if (!string.IsNullOrEmpty(copy.Password)) copy.Password = "***";
+        if (!string.IsNullOrEmpty(copy.SslPassword)) copy.SslPassword = "***";
         return copy.ConnectionString;
     }
+
+    /// <summary>
+    /// Any text that may hold a connection string (an argument repeated in an error, say) with passwords masked:
+    /// <c>user:secret@</c> in URIs, schemeless ones too, and <c>password=</c>, <c>pwd=</c> and SSL passwords in
+    /// key=value forms and URI queries.
+    /// </summary>
+    public static string Mask(string text)
+    {
+        var masked = UserInfoPassword().Replace(text, "$1***@");
+        return KeyPassword().Replace(masked, "$1***");
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"((?:^|://|\s)[^:/@\s;]*:)[^@/\s]+@")]
+    private static partial System.Text.RegularExpressions.Regex UserInfoPassword();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?i)(\b(?:pgpassword|password|pwd|ssl ?password|sslpassword)\s*=\s*)('(?:[^'\\]|\\.)*'|[^;&\s]*)")]
+    private static partial System.Text.RegularExpressions.Regex KeyPassword();
 
     /// <summary>A PostgreSQL position (1-based, in Unicode code points) as a 0-based UTF-16 index.</summary>
     public static int CodePointToIndex(string text, int position)

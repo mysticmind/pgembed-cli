@@ -1,0 +1,23 @@
+Description:
+  Delete instances and their data
+
+  Examples:
+    pgembed rm demo
+
+Usage:
+  pgembed rm [<names>...] [options]
+
+Arguments:
+  <names>  Instance names; * and ? match several, for example ci-*
+
+Options:
+  --force             Stop a running instance first
+  -y, --yes           Delete without asking
+  --all               Every instance
+  --cache-dir <PATH>  Cache folder for downloads and instances (default: PGEMBED_CACHE_DIR, else the
+                      per-user cache folder)
+  --maven-repo <URL>  Maven repository or mirror with the Postgres binaries (default: Maven Central,
+                      or PGEMBED_MAVEN_REPO)
+  --json              Machine-readable output
+  --verbose           Log details to standard error
+  -h, --help          Show help and usage information

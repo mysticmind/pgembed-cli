@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MysticMind.PostgresEmbed;
 using PgEmbed.Cli.Core;
 using Spectre.Console;
-using Spectre.Console.Cli;
 
 namespace PgEmbed.Cli.Infrastructure;
 
@@ -43,14 +42,34 @@ internal sealed class CliContext
         Settings = settings;
         Services = services;
         Workspace = Workspace.Current;
-        MavenRepo = settings.MavenRepo
+        MavenRepo = RequireSecureRepo(settings.MavenRepo
                     ?? Environment.GetEnvironmentVariable("PGEMBED_MAVEN_REPO")
-                    ?? PgServerOptions.DefaultMavenRepo;
+                    ?? PgServerOptions.DefaultMavenRepo);
         Logger = settings.Verbose ? new StderrLogger(services.Error) : NullLogger.Instance;
         Platform = PgPlatform.Detect();
         Catalog = new VersionCatalog(Workspace, services.Http, MavenRepo);
         Registry = new InstanceRegistry(Workspace);
         Instances = new InstanceManager(Workspace, Registry, Catalog, Platform, services.Http, MavenRepo, Logger);
+    }
+
+    /// <summary>
+    /// Downloads are checked against the SHA-256 the repository publishes, which proves nothing when both come over
+    /// plain http: whoever can change one can change the other. So a repository is https, or on this machine
+    /// (http://localhost, file://), unless PGEMBED_ALLOW_HTTP_REPO=1 says an http mirror on a trusted network is fine.
+    /// </summary>
+    internal static string RequireSecureRepo(string repo)
+    {
+        if (!Uri.TryCreate(repo, UriKind.Absolute, out var uri))
+        {
+            throw new PostgresEmbedException($"The Maven repository '{Connections.Mask(repo)}' is not a URL.");
+        }
+
+        if (uri.Scheme is "https" or "file" || uri.IsLoopback) return repo;
+        if (uri.Scheme == "http" && Environment.GetEnvironmentVariable("PGEMBED_ALLOW_HTTP_REPO") == "1") return repo;
+
+        throw new PostgresEmbedException(
+            $"The Maven repository {uri.Scheme}://{uri.Host} is not https: a download and its checksum could both be replaced in " +
+            "transit. Use an https mirror, or set PGEMBED_ALLOW_HTTP_REPO=1 for an http mirror on a network you trust.");
     }
 
     public GlobalSettings Settings { get; }
@@ -67,7 +86,7 @@ internal sealed class CliContext
     /// <summary>Writes a value as JSON, bypassing the console renderer so it is never wrapped or colored.</summary>
     public void WriteJson<T>(T value)
     {
-        Services.Out.WriteLine(JsonSerializer.Serialize(value, Json.Options));
+        Services.Out.WriteLine(Core.Json.Serialize(value));
         Services.Out.Flush();
     }
 
@@ -75,18 +94,6 @@ internal sealed class CliContext
     {
         if (Settings.Json) Services.Error.WriteLine($"warning: {message}");
         else Console.MarkupLineInterpolated($"[yellow]warning:[/] {message}");
-    }
-}
-
-/// <summary>Applies --cache-dir before a command runs: the library follows PGEMBED_CACHE_DIR.</summary>
-internal sealed class CacheDirInterceptor : ICommandInterceptor
-{
-    public void Intercept(CommandContext context, CommandSettings settings)
-    {
-        if (settings is GlobalSettings { CacheDir: { Length: > 0 } dir })
-        {
-            Environment.SetEnvironmentVariable(PgCache.DirectoryVariable, Path.GetFullPath(dir));
-        }
     }
 }
 
@@ -109,55 +116,6 @@ internal sealed class StderrLogger(TextWriter error) : ILogger
     {
         error.WriteLine($"{logLevel.ToString().ToLowerInvariant()}: {formatter(state, exception)}");
         if (exception is not null) error.WriteLine(exception.Message);
-    }
-}
-
-/// <summary>
-/// A minimal container for Spectre.Console.Cli. Following its contract, a service may have several
-/// registrations: resolving the service gives the last one, resolving <c>IEnumerable&lt;T&gt;</c> gives all
-/// of them (possibly none). Unregistered concrete types, such as commands, are built by their constructor.
-/// </summary>
-internal sealed class TypeRegistrar : ITypeRegistrar
-{
-    private readonly Dictionary<Type, List<Func<object>>> _factories = [];
-
-    public void Register(Type service, Type implementation) => Add(service, () => Create(implementation));
-    public void RegisterInstance(Type service, object implementation) => Add(service, () => implementation);
-    public void RegisterLazy(Type service, Func<object> factory) => Add(service, factory);
-    public ITypeResolver Build() => new Resolver(this);
-
-    private void Add(Type service, Func<object> factory)
-    {
-        if (!_factories.TryGetValue(service, out var list)) _factories[service] = list = [];
-        list.Add(factory);
-    }
-
-    private object Create(Type type)
-    {
-        var ctor = type.GetConstructors().OrderByDescending(c => c.GetParameters().Length).First();
-        return ctor.Invoke(ctor.GetParameters().Select(p => Resolve(p.ParameterType)).ToArray());
-    }
-
-    private object? Resolve(Type? type)
-    {
-        if (type is null) return null;
-
-        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
-        {
-            var element = type.GetGenericArguments()[0];
-            var all = _factories.TryGetValue(element, out var registered) ? registered.Select(f => f()).ToArray() : [];
-            var array = Array.CreateInstance(element, all.Length);
-            Array.Copy(all, array, all.Length);
-            return array;
-        }
-
-        if (_factories.TryGetValue(type, out var factories) && factories.Count > 0) return factories[^1]();
-        return type.IsAbstract || type.IsInterface ? null : Create(type);
-    }
-
-    private sealed class Resolver(TypeRegistrar registrar) : ITypeResolver
-    {
-        public object? Resolve(Type? type) => registrar.Resolve(type);
     }
 }
 

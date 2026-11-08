@@ -3,7 +3,6 @@ using MysticMind.PostgresEmbed;
 using PgEmbed.Cli.Core;
 using PgEmbed.Cli.Infrastructure;
 using Spectre.Console;
-using Spectre.Console.Cli;
 
 namespace PgEmbed.Cli.Commands;
 
@@ -30,6 +29,14 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
         [CommandOption("--extension <URL>")]
         [Description("Extension zip to install; append #sha256=<hex> to verify it. Repeatable")]
         public string[] Extensions { get; set; } = [];
+
+        [CommandOption("--password")]
+        [Description("Require a password for TCP connections, for shared machines: pgembed generates it and keeps it in the instance's private settings; pgembed connstr prints it")]
+        public bool Password { get; set; }
+
+        [CommandOption("--locale <LOCALE>")]
+        [Description("Locale for a new instance's data (default: en_US.UTF-8; on Linux without it, C.UTF-8)")]
+        public string? Locale { get; set; }
 
         [CommandOption("--foreground")]
         [Description("Stay attached and stream the log; Ctrl+C stops the server")]
@@ -61,13 +68,13 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
             ? versions.Select(v => ($"{settings.Name}-{VersionOrder.Major(v)}", (string?)v)).ToList()
             : [(settings.Name, versions.FirstOrDefault())];
 
-        var results = new List<object>();
+        var results = new List<StartedInstance>();
         foreach (var (name, version) in targets)
         {
             StartResult result = null!;
-            await InstallCommand.Spin(cli, $"Starting {name}", async () => result = await cli.Instances.StartAsync(
+            await InstallDisplay.RunAsync(cli, $"Starting {name}", async progress => result = await cli.Instances.StartAsync(
                 name, version, settings.Port, parameters, settings.Extensions, keepRunningAfterExit: !settings.Foreground,
-                settings.Refresh, ct));
+                settings.Refresh, ct, settings.Locale, settings.Password, progress));
 
             if (settings.Foreground && result.Attached)
             {
@@ -77,14 +84,17 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
             }
 
             var port = result.Server.PgPort;
-            results.Add(new { name, version = result.Record.Version, port, attached = result.Attached, connectionString = InstanceManager.ConnectionString(port) });
+            // a password is not printed here (terminal scrollback, CI logs): pgembed connstr prints it on request
+            var shown = Connections.Mask(InstanceManager.ConnectionString(port, password: result.Record.Password));
+            results.Add(new StartedInstance(name, result.Record.Version, port, result.Attached, shown));
 
             if (!settings.Json)
             {
                 cli.Console.MarkupLineInterpolated(result.Attached
                     ? (FormattableString)$"[green]●[/] [bold]{name}[/] is already running: PostgreSQL {result.Record.Version} on port {port}"
                     : $"[green]●[/] Started [bold]{name}[/]: PostgreSQL {result.Record.Version} on port {port}");
-                cli.Console.MarkupLineInterpolated($"  [dim]{InstanceManager.ConnectionString(port)}[/]");
+                cli.Console.MarkupLineInterpolated($"  [dim]{shown}[/]");
+                if (result.Record.Password is not null) cli.Console.MarkupLineInterpolated($"  [dim]password required; pgembed connstr {name} prints it[/]");
             }
 
             if (settings.Foreground)
@@ -94,7 +104,8 @@ internal sealed class StartCommand(CliServices services) : AsyncCommand<StartCom
             }
         }
 
-        if (settings.Json) cli.WriteJson(results.Count == 1 ? results[0] : results);
+        if (settings.Json && results.Count == 1) cli.WriteJson(results[0]);
+        else if (settings.Json) cli.WriteJson(results);
         return 0;
     }
 
@@ -147,7 +158,7 @@ internal sealed class StopCommand(CliServices services) : AsyncCommand<Instances
     {
         var cli = new CliContext(settings, services);
         var names = settings.Resolve(cli.Registry);
-        var results = new List<object>();
+        var results = new List<InstanceActionResult>();
         var exit = 0;
 
         foreach (var name in names)
@@ -155,13 +166,13 @@ internal sealed class StopCommand(CliServices services) : AsyncCommand<Instances
             if (!cli.Instances.Exists(name))
             {
                 if (!settings.Json) cli.Console.MarkupLineInterpolated($"[red]✗[/] There is no instance named [bold]{name}[/]");
-                results.Add(new { name, result = "not found" });
+                results.Add(new InstanceActionResult(name, "not found"));
                 exit = 1;
                 continue;
             }
 
             var acted = await act(cli, name);
-            results.Add(new { name, result = acted ? doneVerb.ToLowerInvariant() : "not running" });
+            results.Add(new InstanceActionResult(name, acted ? doneVerb.ToLowerInvariant() : "not running"));
             if (!settings.Json)
             {
                 cli.Console.MarkupLineInterpolated(acted
@@ -200,7 +211,7 @@ internal sealed class RestartCommand(CliServices services) : AsyncCommand<Restar
         await InstallCommand.Spin(cli, $"Restarting {settings.Name}", async () => result = await cli.Instances.StartAsync(
             settings.Name, null, null, new Dictionary<string, string>(), [], keepRunningAfterExit: true, false, ct));
 
-        if (settings.Json) cli.WriteJson(new { name = settings.Name, version = result.Record.Version, port = result.Server.PgPort });
+        if (settings.Json) cli.WriteJson(new RestartedInstance(settings.Name, result.Record.Version, result.Server.PgPort));
         else cli.Console.MarkupLineInterpolated($"[green]●[/] Restarted [bold]{settings.Name}[/]: PostgreSQL {result.Record.Version} on port {result.Server.PgPort}");
         return 0;
     }
@@ -224,11 +235,9 @@ internal sealed class StatusCommand(CliServices services) : AsyncCommand<StatusC
 
         if (settings.Json)
         {
-            cli.WriteJson(views.Select(v => new
-            {
-                v.Name, v.Version, v.DataMajor, state = v.Status.State, v.Port, processId = v.Status.ProcessId,
-                startedAt = v.Status.StartedAt, dataBytes = v.DataBytes
-            }));
+            cli.WriteJson(views.Select(v => new InstanceStatusOutput(
+                v.Name, v.Version, v.DataMajor, v.Status.State.ToString().ToLowerInvariant(), v.Port, v.Status.ProcessId,
+                v.Status.StartedAt, v.DataBytes)).ToList());
             return 0;
         }
 
@@ -287,14 +296,25 @@ internal sealed class ConnStrCommand(CliServices services) : AsyncCommand<ConnSt
         var cli = new CliContext(settings, services);
         if (!cli.Instances.Exists(settings.Name)) throw new PostgresEmbedException($"There is no instance named '{settings.Name}'.");
 
-        var view = await cli.Instances.ViewAsync(settings.Name, ct);
-        var port = view.Port ?? throw new PostgresEmbedException($"'{settings.Name}' has no known port yet: start it once with pgembed start {settings.Name}");
-        string Format(string format) => Connections.Format(format, port, settings.Database, settings.Schema);
+        // the port from postmaster.pid when running; otherwise the full status, or the remembered port
+        var runningPort = cli.Instances.RunningPort(settings.Name);
+        var running = runningPort is not null;
+        if (!running)
+        {
+            var status = await cli.Instances.StatusAsync(settings.Name, ct);
+            running = status.State != PgInstanceState.Stopped;
+            runningPort = status.Port;
+        }
+
+        var port = runningPort ?? cli.Registry.Get(settings.Name)?.Port
+                   ?? throw new PostgresEmbedException($"'{settings.Name}' has no known port yet: start it once with pgembed start {settings.Name}");
+        var password = cli.Registry.Get(settings.Name)?.Password;
+        string Format(string format) => Connections.Format(format, port, settings.Database, settings.Schema, password: password);
 
         if (settings.Json)
         {
             var formats = Connections.FormatNames.ToDictionary(f => f, Format);
-            cli.WriteJson(new { name = settings.Name, port, running = view.Status.State != PgInstanceState.Stopped, formats });
+            cli.WriteJson(new ConnectionStrings(settings.Name, port, running, formats));
             return 0;
         }
 
@@ -307,7 +327,7 @@ internal sealed class ConnStrCommand(CliServices services) : AsyncCommand<ConnSt
         var grid = new Grid().AddColumn(new GridColumn().NoWrap().PadRight(2)).AddColumn();
         foreach (var format in Connections.FormatNames) grid.AddRow(new Markup($"[dim]{format}[/]"), new Text(Format(format)));
         cli.Console.Write(grid);
-        if (view.Status.State == PgInstanceState.Stopped)
+        if (!running)
         {
             cli.Console.MarkupLineInterpolated($"[dim]{settings.Name} is stopped; start it with: pgembed start {settings.Name}[/]");
         }
@@ -340,7 +360,12 @@ internal sealed class LogsCommand(CliServices services) : AsyncCommand<LogsComma
         var file = cli.Instances.LogFile(settings.Name);
         if (File.Exists(file))
         {
-            foreach (var line in ReadShared(file).TakeLast(Math.Max(0, settings.Tail))) services.Out.WriteLine(line);
+            // log lines can hold text from any client: made safe for a terminal
+            foreach (var line in ReadShared(file).TakeLast(Math.Max(0, settings.Tail)))
+            {
+                services.Out.WriteLine(services.OutputRedirected ? line : Sql.Values.ForTerminal(line));
+            }
+            await services.Out.FlushAsync(ct);
         }
 
         if (settings.Follow)
@@ -358,7 +383,7 @@ internal sealed class LogsCommand(CliServices services) : AsyncCommand<LogsComma
         return 0;
     }
 
-    private static List<string> ReadShared(string file)
+    internal static List<string> ReadShared(string file)
     {
         using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(stream);
@@ -381,12 +406,12 @@ internal sealed class LogsCommand(CliServices services) : AsyncCommand<LogsComma
             var line = await reader.ReadLineAsync(ct);
             if (line is null)
             {
+                await output.FlushAsync(ct); // a burst of lines goes out at once
                 await Task.Delay(250, ct);
                 continue;
             }
 
-            await output.WriteLineAsync(line);
-            await output.FlushAsync(ct);
+            await output.WriteLineAsync(Console.IsOutputRedirected ? line : Sql.Values.ForTerminal(line));
         }
     }
 }

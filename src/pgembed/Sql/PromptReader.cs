@@ -21,7 +21,7 @@ internal sealed class PromptReader(string historyFile) : ILineReader
         _catalog = catalog;
         if (!_prompts.TryGetValue(prompt, out var editor))
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(historyFile)!);
+            Infrastructure.PrivateFiles.Create(historyFile); // the history holds the SQL you typed
             editor = new Prompt(
                 persistentHistoryFilepath: historyFile,
                 callbacks: new Callbacks(() => _catalog()),
