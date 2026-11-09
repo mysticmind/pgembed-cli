@@ -28,9 +28,9 @@ internal sealed class InstanceRegistry(Workspace workspace)
         var file = Path.Combine(workspace.InstanceDir(name), FileName);
         try
         {
-            return File.Exists(file) ? Json.Deserialize<InstanceRecord>(File.ReadAllText(file)) : null;
+            return File.Exists(file) ? Json.Deserialize<InstanceRecord>(SharedFile.ReadAllText(file)) : null;
         }
-        catch (Exception ex) when (ex is IOException or JsonException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             return null;
         }
@@ -45,7 +45,8 @@ internal sealed class InstanceRegistry(Workspace workspace)
         File.WriteAllText(temp, ""); // created first so it is private before it holds anything
         Infrastructure.PrivateFiles.File(temp);
         File.WriteAllText(temp, Json.Serialize(record));
-        File.Move(temp, file, overwrite: true);
+        // on Windows, another pgembed (ls, status, the MCP server) may be reading it right now
+        SharedFile.Replace(temp, file);
     }
 
     /// <summary>Every instance folder: those with a registry entry and those with only data.</summary>

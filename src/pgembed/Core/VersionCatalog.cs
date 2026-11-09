@@ -82,11 +82,7 @@ internal sealed class VersionCatalog(Workspace workspace, HttpClient http, strin
     {
         try
         {
-            if (!File.Exists(file)) return null;
-            // FileShare.Delete: on Windows, another process can replace the file while this one reads it
-            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var reader = new StreamReader(stream);
-            return Json.Deserialize<Cached>(reader.ReadToEnd());
+            return File.Exists(file) ? Json.Deserialize<Cached>(SharedFile.ReadAllText(file)) : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -103,7 +99,7 @@ internal sealed class VersionCatalog(Workspace workspace, HttpClient http, strin
         try
         {
             File.WriteAllText(temp, Json.Serialize(cached));
-            File.Move(temp, file, overwrite: true);
+            SharedFile.Replace(temp, file);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

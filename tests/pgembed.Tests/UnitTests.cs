@@ -207,6 +207,27 @@ public class InstanceRegistryTests : IDisposable
         Assert.Equal(["ci-17"], registry.Match("ci-?7"));
         Assert.Equal(["missing"], registry.Match("missing")); // a plain name is returned as given
     }
+
+    // `start` saves an instance's settings while `ls`, `status` or the MCP server may be reading them; on Windows,
+    // replacing the file while another process read it failed the start with "Access to the path is denied"
+    [Fact]
+    public async Task Saves_while_others_read_and_save_the_same_record()
+    {
+        var registry = new InstanceRegistry(_workspace);
+        var ct = TestContext.Current.CancellationToken;
+        registry.Save(new InstanceRecord("app", "17.6.0", 5000, [], [], DateTimeOffset.UtcNow, null));
+
+        var saves = Enumerable.Range(1, 16).Select(i => Task.Run(() =>
+            registry.Save(new InstanceRecord("app", "17.6.0", 5000 + i, [], [], DateTimeOffset.UtcNow, null)), ct));
+        var reads = Enumerable.Range(1, 16).Select(_ => Task.Run(() =>
+        {
+            for (var i = 0; i < 20; i++) Assert.NotNull(registry.Get("app"));
+        }, ct));
+        await Task.WhenAll(saves.Concat(reads));
+
+        Assert.InRange(registry.Get("app")!.Port, 5001, 5016);
+        Assert.Empty(Directory.EnumerateFiles(_workspace.InstanceDir("app"), "*.tmp"));
+    }
 }
 
 public class ExtensionArgumentTests
