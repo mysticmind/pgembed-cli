@@ -35,5 +35,6 @@ library, and is also an MCP server for AI assistants.
 
 ## Requirements
 
-The .NET 10 SDK or newer, on Windows x64, macOS (x64, arm64) or Linux (x64, arm64, glibc or musl). On Linux
+Node.js 18 or newer (npm) or the .NET 10 SDK or newer (.NET tool), on Windows x64, macOS (x64, arm64) or
+Linux (x64, arm64, glibc or musl). On Linux
 and macOS, Postgres refuses to run as root, so run pgembed as a normal user; in a container, add one.

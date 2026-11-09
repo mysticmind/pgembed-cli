@@ -10,6 +10,10 @@ Claude Code:
 
 snippet: sample_mcp_claude_code
 
+With .NET 10, `dnx` runs it from NuGet instead of npm:
+
+snippet: sample_mcp_claude_code_dnx
+
 Claude Desktop, Cursor and other clients that read an `mcpServers` file:
 
 snippet: @/samples/mcp/mcp.json
@@ -18,8 +22,8 @@ VS Code (`.vscode/mcp.json`):
 
 snippet: @/samples/mcp/vscode-mcp.json
 
-`dnx` runs it without installing (.NET 10). With the tool installed globally, use `"command": "pgembed"` and
-`"args": ["mcp"]`.
+`npx -y` runs it without installing; so does `"command": "dnx"` with `"args": ["pgembed", "mcp"]` on .NET 10.
+With pgembed installed globally (npm or .NET tool), use `"command": "pgembed"` and `"args": ["mcp"]`.
 
 ## What the assistant can do
 

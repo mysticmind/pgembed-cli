@@ -2,15 +2,21 @@
 
 ## Install
 
-snippet: sample_install_tool
+With npm (Node.js 18 or newer):
 
-On .NET 10 you can also run it without installing:
+snippet: sample_install_npm
+
+snippet: sample_npx
+
+Or as a .NET tool (the .NET 10 SDK or newer):
+
+snippet: sample_install_tool
 
 snippet: sample_dnx
 
-Each platform (Windows x64, Linux x64 and arm64 with glibc or musl, macOS x64 and arm64) gets a native
-executable, compiled ahead of time, so commands start in a few milliseconds; other platforms get a portable
-build.
+Both install the same native executable, compiled ahead of time, so commands start in a few milliseconds.
+There is one for each platform: Windows x64, Linux x64 and arm64 with glibc or musl, macOS x64 and arm64.
+On other platforms, the .NET tool installs a portable build; npm has none.
 
 ## Your first instance
 

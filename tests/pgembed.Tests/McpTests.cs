@@ -350,7 +350,9 @@ public class McpListingTests
             .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion.Split('+')[0];
 
         Assert.Equal(version, root.GetProperty("version").GetString());
-        Assert.Equal(version, root.GetProperty("packages")[0].GetProperty("version").GetString());
+        var packages = root.GetProperty("packages").EnumerateArray().ToList();
+        Assert.Equal(["nuget", "npm"], packages.Select(p => p.GetProperty("registryType").GetString()));
+        Assert.All(packages, p => Assert.Equal(version, p.GetProperty("version").GetString()));
         Assert.InRange(root.GetProperty("description").GetString()!.Length, 1, 100);
 
         // the registry checks that the package README names the server

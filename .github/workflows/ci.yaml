@@ -80,6 +80,19 @@ jobs:
           $pg schema smoke
           $pg rm smoke --force --yes
 
+      - name: Install Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # the npm packages wrap this same build: package it, and run it through the launcher as npm lays it out
+      - name: Package for npm and run it
+        run: |
+          mkdir -p builds && cp -R publish builds/${{ matrix.rid }}
+          version=$(./publish/${{ matrix.exe }} --version | cut -d+ -f1)
+          node npm/build.mjs builds "$version" npm-out
+          node npm/smoke.mjs npm-out "$version"
+
   # The docs site shows code from samples/: the CLI samples run here, the C# samples run as tests, and the
   # site build fails on a snippet that no longer exists. The reference pages generated from the code are
   # checked by DocsTests in the test job.

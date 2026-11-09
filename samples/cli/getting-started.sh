@@ -10,6 +10,14 @@ pgembed stop app
 
 # Installing changes the machine, so it only runs when asked: RUN_SKIPPED_SAMPLES=1
 if [[ "${RUN_SKIPPED_SAMPLES:-}" == 1 ]]; then
+  # region sample_install_npm
+  npm install --global pgembed
+  # endregion
+
+  # region sample_npx
+  npx pgembed versions                  # or run it without installing
+  # endregion
+
   # region sample_install_tool
   dotnet tool install --global pgembed
   # endregion

@@ -1,0 +1,23 @@
+{
+  "name": "pgembed",
+  "version": "0.0.0",
+  "description": "Run PostgreSQL locally without installing it: named instances of any version in the background, SQL with readable results and errors, schema inspection, SQL formatting, and an MCP server for AI assistants.",
+  "keywords": ["postgres", "postgresql", "pg", "embedded", "cli", "testing", "mcp", "mcp-server"],
+  "homepage": "https://mysticmind.github.io/pgembed-cli/",
+  "bugs": "https://github.com/mysticmind/pgembed-cli/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mysticmind/pgembed-cli.git"
+  },
+  "license": "MIT",
+  "author": "Babu Annamalai",
+  "mcpName": "io.github.mysticmind/pgembed",
+  "bin": {
+    "pgembed": "pgembed.js"
+  },
+  "files": ["pgembed.js"],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {}
+}

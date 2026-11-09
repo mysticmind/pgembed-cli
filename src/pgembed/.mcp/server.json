@@ -23,6 +23,21 @@
           "value": "mcp"
         }
       ]
+    },
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "pgembed",
+      "version": "0.2.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
     }
   ]
 }

@@ -2,8 +2,8 @@
   "servers": {
     "pgembed": {
       "type": "stdio",
-      "command": "dnx",
-      "args": ["pgembed", "mcp"]
+      "command": "npx",
+      "args": ["-y", "pgembed", "mcp"]
     }
   }
 }

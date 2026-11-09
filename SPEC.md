@@ -108,8 +108,8 @@ Not covered, by design: functions the user defines unless `--least-privilege` is
 | | |
 | --- | --- |
 | Repo | `mysticmind/pgembed-cli` |
-| NuGet package and command | `pgembed` (a .NET tool) |
-| Install | `dotnet tool install -g pgembed`, or `dnx pgembed <command>`; needs the .NET 10 SDK or later |
+| Packages and command | `pgembed`: a .NET tool on NuGet, and on npm (the same Native AOT executables, one package per platform as `@mysticmind/pgembed-<platform>`) |
+| Install | `npm install -g pgembed`, or `npx pgembed <command>`; needs Node.js 18 or later. Or `dotnet tool install -g pgembed`, or `dnx pgembed <command>`; needs the .NET 10 SDK or later |
 | Runtime | net10.0; a Native AOT executable per platform, and a portable build rolling forward to later runtimes (see Performance) |
 | Versioning | independent of the library, starting at 0.1.0 |
 | Library reference | `MysticMind.PostgresEmbed` `[5.2.1, 6.0.0)` (5.2 adds what pgembed needs, see below; 5.2.1 fixes shared memory after a kill) |
@@ -319,7 +319,7 @@ Not exposed, on purpose: `cache clean` (deletes downloads shared with every proj
 
 **Protocol hygiene.** Standard output carries only protocol messages; everything else (library log, warnings) goes to standard error. The MCP host builds the core services directly, not through the CLI's console context, so no Spectre output can reach standard output.
 
-**Packaging.** The tool package declares itself an MCP server (package type `McpServer` and `.mcp/server.json`), so nuget.org shows the configuration, and `dnx` runs it without an install.
+**Packaging.** The tool package declares itself an MCP server (package type `McpServer` and `.mcp/server.json`), so nuget.org shows the configuration, and `dnx` runs it without an install. On npm, `npx -y pgembed mcp` does the same; `server.json` lists both packages, and the npm package names the server in `mcpName`, which the MCP registry checks.
 
 ### Also in 0.2 (proposed, built)
 

@@ -4,6 +4,10 @@ set -euo pipefail
 
 if [[ "${RUN_SKIPPED_SAMPLES:-}" == 1 ]]; then
   # region sample_mcp_claude_code
+  claude mcp add pgembed -- npx -y pgembed mcp
+  # endregion
+
+  # region sample_mcp_claude_code_dnx
   claude mcp add pgembed -- dnx pgembed mcp
   # endregion
 

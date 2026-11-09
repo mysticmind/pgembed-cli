@@ -1,4 +1,4 @@
-name: Publish to NuGet
+name: Publish to NuGet and npm
 
 on: [workflow_dispatch]
 
@@ -12,6 +12,10 @@ env:
 #   pgembed.any     portable (JIT), for platforms without their own package
 #   pgembed         the top-level package; dotnet tool install and dnx pick the right one from it
 # Every platform package is pushed before the top-level one, so an install never finds one missing.
+#
+# npm gets the same Native AOT executables, taken from the NuGet packages (npm/build.mjs): one package per
+# platform (@mysticmind/pgembed-<platform>) and pgembed, whose launcher runs the one npm installed. There is
+# no portable package on npm: it would need .NET.
 
 jobs:
   # Native AOT packages, each built on its own OS (macOS packs osx-x64 too: AOT cross-compiles between the
@@ -154,3 +158,61 @@ jobs:
 
       - name: Push the top-level package
         run: dotnet nuget push artifacts/pgembed.[0-9]*.nupkg -s https://api.nuget.org/v3/index.json -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate
+
+  npm:
+    needs: [push]
+    runs-on: ubuntu-latest
+
+    # npm trusted publishing: like NuGet's, no stored token once the packages exist and each has this
+    # repository and workflow file as its trusted publisher (npmjs.com > package > Settings). Until then (the
+    # first publish), the NPM_TOKEN secret is used. Either way, npm records provenance: which workflow built it.
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nupkg-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Install Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # the executables of the platform packages, as they are in the NuGet packages
+      - name: Build the npm packages
+        run: |
+          version=$(ls artifacts | sed -n 's/^pgembed\.\([0-9][0-9.]*[0-9]\(-[0-9A-Za-z.-]*\)\{0,1\}\)\.nupkg$/\1/p')
+          test -n "$version" || { echo "::error::no top-level package in artifacts"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          for package in artifacts/pgembed.[a-z]*.nupkg; do
+            rid=$(basename "$package" ".$version.nupkg"); rid=${rid#pgembed.}
+            [ "$rid" = any ] && continue
+            unzip -q "$package" "tools/any/$rid/*" -d unpacked
+          done
+          node npm/build.mjs unpacked/tools/any "$version" npm-out --all
+
+      - name: Run the linux-x64 package through the launcher
+        run: node npm/smoke.mjs npm-out "$VERSION"
+
+      # platform packages first, as on NuGet; a rerun skips what is already published
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm --version
+          for dir in npm-out/platforms/* npm-out/pgembed; do
+            name=$(node -p "require('./$dir/package.json').name")
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is already published"
+              continue
+            fi
+            npm publish "$dir" --access public --provenance
+          done

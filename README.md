@@ -1,7 +1,7 @@
 <!-- mcp-name: io.github.mysticmind/pgembed -->
 <img src="https://raw.githubusercontent.com/mysticmind/pgembed-cli/main/assets/icon.png" alt="pgembed icon: an elephant standing on a terminal" width="96">
 
-# pgembed [![NuGet](https://badgen.net/nuget/v/pgembed)](https://www.nuget.org/packages/pgembed/)
+# pgembed [![npm](https://badgen.net/npm/v/pgembed)](https://www.npmjs.com/package/pgembed) [![NuGet](https://badgen.net/nuget/v/pgembed)](https://www.nuget.org/packages/pgembed/)
 
 Run PostgreSQL on your machine without installing it. `pgembed` downloads minimal, small sized Postgres
 binaries for your platform (Windows, macOS, Linux and Alpine, x64 and arm64), keeps named instances of any
@@ -21,14 +21,21 @@ $ pgembed stop app
 
 ## Install
 
-Needs the .NET 10 SDK or newer.
+With npm (Node.js 18 or newer):
+
+```console
+npm install --global pgembed
+npx pgembed status                      # or run it without installing
+```
+
+Or as a .NET tool (the .NET 10 SDK or newer):
 
 ```console
 dotnet tool install --global pgembed
 dnx pgembed status                      # or run it without installing
 ```
 
-Each platform gets a native executable, compiled ahead of time, so commands start in a few milliseconds.
+Both install the same native executable, compiled ahead of time, so commands start in a few milliseconds.
 See [Getting Started](https://mysticmind.github.io/pgembed-cli/guide/getting-started).
 
 ## What it does
@@ -52,11 +59,11 @@ See [Getting Started](https://mysticmind.github.io/pgembed-cli/guide/getting-sta
 ## MCP server for AI assistants
 
 ```console
-claude mcp add pgembed -- dnx pgembed mcp          # Claude Code, on .NET 10 or newer
+claude mcp add pgembed -- npx -y pgembed mcp       # Claude Code; or: dnx pgembed mcp, with .NET 10
 ```
 
 ```json
-{ "mcpServers": { "pgembed": { "command": "dnx", "args": ["pgembed", "mcp"] } } }
+{ "mcpServers": { "pgembed": { "command": "npx", "args": ["-y", "pgembed", "mcp"] } } }
 ```
 
 The assistant gets tools for instances, SQL, schema and query plans. Changes ask you first, servers pgembed

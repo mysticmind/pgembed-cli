@@ -29,7 +29,7 @@ features:
     link: /guide/versions-and-cache#minimal-binaries
     linkText: What you get
   - title: No Docker, no install
-    details: Works on laptops and CI runners that cannot run Docker or install packages. Nothing to set up beyond the .NET SDK.
+    details: Works on laptops and CI runners that cannot run Docker or install packages. Install with npm or as a .NET tool; nothing else to set up.
     link: /guide/introduction
     linkText: Why pgembed
   - title: SQL you can read

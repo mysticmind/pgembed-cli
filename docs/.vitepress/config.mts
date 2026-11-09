@@ -36,6 +36,7 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'MCP', link: '/guide/mcp' },
       { text: 'Reference', link: '/reference/commands' },
+      { text: 'npm', link: 'https://www.npmjs.com/package/pgembed' },
       { text: 'NuGet', link: 'https://www.nuget.org/packages/pgembed/' },
     ],
     sidebar: [
