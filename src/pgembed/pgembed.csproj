@@ -28,7 +28,7 @@
     <PublishAot>true</PublishAot>
     <!-- also an MCP server: nuget.org shows its configuration, and dnx pgembed mcp runs it -->
     <PackageType>McpServer</PackageType>
-    <VersionPrefix>0.2.2</VersionPrefix>
+    <VersionPrefix>0.2.3</VersionPrefix>
     <Description>Run PostgreSQL locally without installing it: named instances of any version in the background, SQL with readable results and errors, schema inspection, SQL formatting, and an MCP server for AI assistants. Built on MysticMind.PostgresEmbed.</Description>
     <Authors>Babu Annamalai</Authors>
     <Copyright>Copyright (C) Babu Annamalai</Copyright>
