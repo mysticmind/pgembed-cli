@@ -2,6 +2,11 @@
 
 ## Install
 
+::: warning npm package
+The npm package needs a fix and will be available again on 10 November 2026. Until then, install the .NET tool
+below, or use `dnx` for the MCP server.
+:::
+
 With npm (Node.js 18 or newer):
 
 snippet: sample_install_npm

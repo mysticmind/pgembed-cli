@@ -6,6 +6,11 @@ safety rules as the command line.
 
 ## Set it up
 
+::: warning npm package
+The npm package needs a fix and will be available again on 10 November 2026. Until then, use the `dnx` setup
+below (.NET 10).
+:::
+
 Claude Code:
 
 snippet: sample_mcp_claude_code
