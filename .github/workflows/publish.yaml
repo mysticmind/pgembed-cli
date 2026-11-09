@@ -226,8 +226,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm --version
-          for dir in npm-out/platforms/* npm-out/pgembed; do
-            name=$(node -p "require('./$dir/package.json').name")
+          # ./ marks a folder: npm reads npm-out/pgembed as a GitHub repository (user/repo)
+          for dir in ./npm-out/platforms/* ./npm-out/pgembed; do
+            name=$(node -p "require('$dir/package.json').name")
             if npm view "$name@$VERSION" version >/dev/null 2>&1; then
               echo "$name@$VERSION is already published"
               continue
