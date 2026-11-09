@@ -1,6 +1,13 @@
 name: Publish to NuGet and npm
 
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Publish to
+        type: choice
+        options: [both, nuget, npm]
+        default: both
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
@@ -16,6 +23,9 @@ env:
 # npm gets the same Native AOT executables, taken from the NuGet packages (npm/build.mjs): one package per
 # platform (@mysticmind/pgembed-<platform>) and pgembed, whose launcher runs the one npm installed. There is
 # no portable package on npm: it would need .NET.
+#
+# "Publish to" picks both (NuGet, then npm), nuget or npm. Each push skips versions already published, so a
+# version can go to one registry first and the other later.
 
 jobs:
   # Native AOT packages, each built on its own OS (macOS packs osx-x64 too: AOT cross-compiles between the
@@ -109,8 +119,10 @@ jobs:
           name: nupkg-portable
           path: artifacts/*.nupkg
 
+  # NuGet, unless only npm was chosen; the packages are packed either way: npm's executables come from them
   push:
     needs: [pack-native, pack-musl, pack-portable]
+    if: inputs.target != 'npm'
     runs-on: ubuntu-latest
 
     # NuGet trusted publishing: no stored API key. The job gets a GitHub OIDC token, which
@@ -159,8 +171,14 @@ jobs:
       - name: Push the top-level package
         run: dotnet nuget push artifacts/pgembed.[0-9]*.nupkg -s https://api.nuget.org/v3/index.json -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate
 
+  # npm, unless only NuGet was chosen; with both, after NuGet, and not when the NuGet push failed
   npm:
-    needs: [push]
+    needs: [pack-native, pack-musl, pack-portable, push]
+    if: >-
+      !cancelled() && inputs.target != 'nuget'
+      && needs.pack-native.result == 'success' && needs.pack-musl.result == 'success'
+      && needs.pack-portable.result == 'success'
+      && (needs.push.result == 'success' || needs.push.result == 'skipped')
     runs-on: ubuntu-latest
 
     # npm trusted publishing: like NuGet's, no stored token once the packages exist and each has this
