@@ -82,20 +82,33 @@ internal sealed class VersionCatalog(Workspace workspace, HttpClient http, strin
     {
         try
         {
-            return File.Exists(file) ? Json.Deserialize<Cached>(File.ReadAllText(file)) : null;
+            if (!File.Exists(file)) return null;
+            // FileShare.Delete: on Windows, another process can replace the file while this one reads it
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            return Json.Deserialize<Cached>(reader.ReadToEnd());
         }
-        catch (Exception ex) when (ex is IOException or JsonException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             return null; // a damaged cache file is simply refetched
         }
     }
 
+    // A cache: when the file cannot be replaced (on Windows, while another process has it open or is replacing
+    // it too), the list in hand is still good, and the other process is writing the same list.
     private static void Write(string file, Cached cached)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         var temp = $"{file}.{Guid.NewGuid():N}.tmp";
-        File.WriteAllText(temp, Json.Serialize(cached));
-        File.Move(temp, file, overwrite: true);
+        try
+        {
+            File.WriteAllText(temp, Json.Serialize(cached));
+            File.Move(temp, file, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            try { File.Delete(temp); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { }
+        }
     }
 }
 

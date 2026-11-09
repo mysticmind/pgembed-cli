@@ -136,6 +136,21 @@ public class VersionCatalogTests : IDisposable
         Assert.Contains("16, 17", missing.Message);
     }
 
+    // tests and parallel `pgembed start`s share one cache file; on Windows, replacing it while another process
+    // read or replaced it failed the start with "Access to the path is denied"
+    [Fact]
+    public async Task Concurrent_refreshes_share_the_cache_file()
+    {
+        var maven = new FakeMaven(_ => Ok(Metadata, "\"v1\""));
+        var ct = TestContext.Current.CancellationToken;
+
+        var lists = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Task.Run(() =>
+            new VersionCatalog(_workspace, new HttpClient(maven), "https://maven.test").GetAsync(_platform, true, ct), ct)));
+
+        Assert.All(lists, list => Assert.Equal(["16.9.0", "17.5.0", "17.6.0"], list.Versions));
+        Assert.Empty(Directory.EnumerateFiles(_workspace.MetadataDir, "*.tmp"));
+    }
+
     [Fact]
     public async Task Reports_a_platform_without_binaries()
     {
@@ -215,7 +230,7 @@ internal sealed class FakeMaven(Func<HttpRequestMessage, HttpResponseMessage> re
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        Requests.Add(request);
+        lock (Requests) Requests.Add(request);
         return Task.FromResult(respond(request));
     }
 }
