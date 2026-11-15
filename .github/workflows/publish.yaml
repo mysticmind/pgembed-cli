@@ -181,9 +181,9 @@ jobs:
       && (needs.push.result == 'success' || needs.push.result == 'skipped')
     runs-on: ubuntu-latest
 
-    # npm trusted publishing: like NuGet's, no stored token once the packages exist and each has this
-    # repository and workflow file as its trusted publisher (npmjs.com > package > Settings). Until then (the
-    # first publish), the NPM_TOKEN secret is used. Either way, npm records provenance: which workflow built it.
+    # npm trusted publishing: like NuGet's, no stored token. Each of the eight packages has this repository
+    # and workflow file as its trusted publisher (npmjs.com > package > Settings > Trusted Publisher); npm
+    # exchanges the job's GitHub OIDC token for a short-lived one and records provenance. It needs npm 11.5.1+.
     permissions:
       contents: read
       id-token: write
@@ -222,8 +222,6 @@ jobs:
 
       # platform packages first, as on NuGet; a rerun skips what is already published
       - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm --version
           # ./ marks a folder: npm reads npm-out/pgembed as a GitHub repository (user/repo)
